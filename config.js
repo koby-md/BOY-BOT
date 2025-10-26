@@ -16,15 +16,15 @@ global.isBaileysFail = false;
 global.defaultLenguaje = 'es';
 
 global.owner = [
-  ['5219996125657', '👑 Propietario 👑', true],
-  ['5492916450307'],
-  ['5493794297363'],
-  ['59169082575'],
-  ['595972184435'],
-  ['5215533827255']
+  ['212697516525', '👑 Propietario 👑', true],
+  ['212697516525'],
+  ['212697516525'],
+  ['212697516525'],
+  ['212697516525'],
+  ['212697516525']
 ];
 
-global.suittag = ['5219993404349'];
+global.suittag = ['212697516525'];
 global.prems = [];
 
 // Base Rest Api
@@ -36,7 +36,7 @@ global.wm = 'The Mystic - Bot';
 global.titulowm = 'Mystic Bot';
 global.titulowm2 = `Mystic Bot`
 global.igfg = 'The Mystic';
-global.wait = '*_[ ⏳ ] Cargando..._*';
+global.wait = '> *_جاري التحميل●●●○○ 🖤 WAIT🩶_*';
 
 global.imagen1 = fs.readFileSync('./src/assets/images/menu/languages/es/menu.png');
 global.imagen2 = fs.readFileSync('./src/assets/images/menu/languages/pt/menu.png');
