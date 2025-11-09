@@ -22,9 +22,7 @@ console.log(chalk.yellow.bold('—◉ㅤIniciando sistema...'));
 
 function verificarOCrearCarpetaAuth() {
   const authPath = join(__dirname, global.authFile);
-  if (!fs.existsSync(authPath)) {
-    fs.mkdirSync(authPath, { recursive: true });
-  }
+  if (!fs.existsSync(authPath)) fs.mkdirSync(authPath, { recursive: true });
 }
 
 function verificarCredsJson() {
@@ -34,15 +32,10 @@ function verificarCredsJson() {
 
 function formatearNumeroTelefono(numero) {
   let formattedNumber = numero.replace(/[^\d+]/g, '');
-  if (formattedNumber.startsWith('+52') && !formattedNumber.startsWith('+521')) {
-    formattedNumber = formattedNumber.replace('+52', '+521');
-  } else if (formattedNumber.startsWith('52') && !formattedNumber.startsWith('521')) {
-    formattedNumber = `+521${formattedNumber.slice(2)}`;
-  } else if (formattedNumber.startsWith('52') && formattedNumber.length >= 12) {
-    formattedNumber = `+${formattedNumber}`;
-  } else if (!formattedNumber.startsWith('+')) {
-    formattedNumber = `+${formattedNumber}`;
-  }
+  if (formattedNumber.startsWith('+52') && !formattedNumber.startsWith('+521')) formattedNumber = formattedNumber.replace('+52', '+521');
+  else if (formattedNumber.startsWith('52') && !formattedNumber.startsWith('521')) formattedNumber = `+521${formattedNumber.slice(2)}`;
+  else if (formattedNumber.startsWith('52') && formattedNumber.length >= 12) formattedNumber = `+${formattedNumber}`;
+  else if (!formattedNumber.startsWith('+')) formattedNumber = `+${formattedNumber}`;
   return formattedNumber;
 }
 
@@ -55,23 +48,12 @@ async function start(file) {
   if (isRunning) return;
   isRunning = true;
 
-  say('The Mystic\nBot', {
-    font: 'chrome',
-    align: 'center',
-    gradient: ['red', 'magenta'],
-  });
-
-  say(`Bot creado por Bruno Sobrino`, {
-    font: 'console',
-    align: 'center',
-    gradient: ['red', 'magenta'],
-  });
+  say('The Mystic\nBot', { font: 'chrome', align: 'center', gradient: ['red', 'magenta'] });
+  say(`Bot creado por Bruno Sobrino`, { font: 'console', align: 'center', gradient: ['red', 'magenta'] });
 
   verificarOCrearCarpetaAuth();
 
   if (verificarCredsJson()) {
-    const args = [join(__dirname, file), ...process.argv.slice(2)];
-    setupMaster({ exec: args[0], args: args.slice(1) });
     forkProcess(file);
     return;
   }
@@ -81,35 +63,41 @@ async function start(file) {
   if (opcion === '2') {
     const phoneNumber = await question(chalk.yellowBright.bold('\n—◉ㅤEscriba su número de WhatsApp:\n') + chalk.white.bold('◉ㅤEjemplo: +5219992095479\n—> '));
     const numeroTelefono = formatearNumeroTelefono(phoneNumber);
-    
+
     if (!esNumeroValido(numeroTelefono)) {
-      console.log(chalk.bgRed(chalk.white.bold('[ ERROR ] Número inválido. Asegúrese de haber escrito su numero en formato internacional y haber comenzado con el código de país.\n—◉ㅤEjemplo:\n◉ +5219992095479\n')));
+      console.log(chalk.bgRed(chalk.white.bold('[ ERROR ] Número inválido. Asegúrese de haber escrito su numero en formato internacional.')));
       process.exit(0);
     }
-    
+
     process.argv.push('--phone=' + numeroTelefono);
     process.argv.push('--method=code');
   } else if (opcion === '1') {
     process.argv.push('--method=qr');
   }
-  
-  const args = [join(__dirname, file), ...process.argv.slice(2)];
-  setupMaster({ exec: args[0], args: args.slice(1) });
+
   forkProcess(file);
 }
 
 function forkProcess(file) {
+  if (childProcess) return; // لا تنشئ أكثر من fork واحد
+
+  const args = [join(__dirname, file), ...process.argv.slice(2)];
+  setupMaster({ exec: args[0], args: args.slice(1) });
   childProcess = fork();
+
+  // إزالة أي listener قديم قبل إضافة جديد
+  rl.removeAllListeners('line');
+
+  rl.on('line', (line) => {
+    if (childProcess) childProcess.emit('message', line.trim());
+  });
 
   childProcess.on('message', (data) => {
     console.log(chalk.green.bold('—◉ㅤRECIBIDO:'), data);
     switch (data) {
       case 'reset':
         console.log(chalk.yellow.bold('—◉ㅤSolicitud de reinicio recibida...'));
-        childProcess.removeAllListeners();
-        childProcess.kill('SIGTERM');
-        isRunning = false;
-        setTimeout(() => start(file), 1000);
+        restartChild(file);
         break;
       case 'uptime':
         childProcess.send(process.uptime());
@@ -119,21 +107,20 @@ function forkProcess(file) {
 
   childProcess.on('exit', (code, signal) => {
     console.log(chalk.yellow.bold(`—◉ㅤProceso secundario terminado (${code || signal})`));
-    isRunning = false;
     childProcess = null;
-    
-    if (code !== 0 || signal === 'SIGTERM') {
-      console.log(chalk.yellow.bold('—◉ㅤReiniciando proceso...'));
-      setTimeout(() => start(file), 1000);
-    }
+    isRunning = false;
+    console.log(chalk.yellow.bold('—◉ㅤReiniciando proceso...'));
+    setTimeout(() => start(file), 1000);
   });
+}
 
-  const opts = yargs(process.argv.slice(2)).argv;
-  if (!opts.test) {
-    rl.on('line', (line) => {
-      childProcess.emit('message', line.trim());
-    });
-  }
+function restartChild(file) {
+  if (!childProcess) return;
+  childProcess.removeAllListeners();
+  childProcess.kill('SIGTERM');
+  childProcess = null;
+  isRunning = false;
+  setTimeout(() => start(file), 500);
 }
 
 try {
