@@ -1,39 +1,46 @@
 import fs from 'fs';
+import fetch from 'node-fetch'; // أو استخدم fetch المدمج في Node 18+
 import { igdl } from 'btch-downloader';
 
-const handler = async (m, { conn }) => {
-    const instagramUrlPattern = /^(https?:\/\/)?(www\.)?(instagram\.com|ig\.me)\/.+$/;
-    const messageText = m.text.trim();
+const handler = async (m, { conn, text }) => {
+  const instagramUrl = text || m.text || (m.message?.conversation);
 
-    if (!instagramUrlPattern.test(messageText)) {
-        return; // إذا لم يكن الرابط من Instagram، لا تفعل شيئًا
+  if (!instagramUrl) return m.reply('❌ أرسل رابط Instagram لتنزيل الفيديو أو الصورة');
+
+  const instagramUrlPattern = /^(https?:\/\/)?(www\.)?(instagram\.com|ig\.me)\/.+$/;
+  if (!instagramUrlPattern.test(instagramUrl)) return;
+
+  m.reply(wait);
+
+  try {
+    const res = await igdl(instagramUrl);
+
+    if (!res?.result || res.result.length === 0) {
+      return m.reply('⚠️ لم يتم العثور على محتوى صالح في هذا الرابط.');
     }
 
-    m.reply(wait);
+    for (const i of res.result) {
+      const fileExt = i.url.includes('.jpg') ? 'jpg' : 'mp4';
+      const filePath = `./src/tmp/instagram_${Date.now()}.${fileExt}`;
 
-    try {
-        let res = await igdl(messageText);
+      // تنزيل الفيديو أو الصورة
+      const buffer = await (await fetch(i.url)).arrayBuffer();
+      fs.writeFileSync(filePath, Buffer.from(buffer));
 
-        for (let i of res) {
-            const videoPath = `./src/tmp/instagram_${Date.now()}.mp4`;
+      // إرسال الملف للمستخدم
+      await conn.sendFile(m.chat, filePath, `instagram.${fileExt}`, '*✅ تم التنزيل!*', m);
 
-            // تنزيل الفيديو
-            let buffer = await (await fetch(i.url)).buffer();
-            fs.writeFileSync(videoPath, buffer);
-
-            // إرسال الفيديو للمستخدم
-            await conn.sendFile(m.chat, videoPath, 'instagram.mp4', '*_✅ تم التنزيل!_*', m);
-
-            // حذف الفيديو المؤقت بعد الإرسال
-            fs.unlinkSync(videoPath);
-        }
-    } catch (error) {
-        console.error("❌ خطأ أثناء تنزيل فيديو Instagram:", error);
-        m.reply('⚠️ حدث خطأ أثناء التنزيل. حاول مرة أخرى لاحقًا.');
+      // حذف الملف المؤقت بعد الإرسال
+      fs.unlinkSync(filePath);
     }
+
+  } catch (err) {
+    console.error('❌ خطأ أثناء تنزيل محتوى Instagram:', err);
+    m.reply('⚠️ حدث خطأ أثناء التنزيل. حاول مرة أخرى لاحقًا.');
+  }
 };
 
-// تشغيل البوت تلقائيًا عند إرسال رابط Instagram
+// البوت يتفاعل تلقائيًا مع أي رابط Instagram
 handler.customPrefix = /^(https?:\/\/)?(www\.)?(instagram\.com|ig\.me)\/.+$/;
 handler.command = new RegExp(); // بدون أمر محدد
 
