@@ -16,6 +16,10 @@
     "eslint": "eslint .",
     "eslintfix": "eslint --fix ."
   },
+"engines": {
+  "node": ">=20.0.0"
+},
+
   "homepage": "https://github.com/BrunoSobrino/TheMystic-Bot-MD",
   "author": {
     "name": "BrunoSobrino"
