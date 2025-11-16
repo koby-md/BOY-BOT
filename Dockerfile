@@ -1,33 +1,28 @@
 # 1. المرحلة الأساسية: استخدام صورة Node.js رسمية بإصدار 20
-# اختر نظام تشغيل خفيف مثل Alpine أو الأفضل Debian Slim (لضمان توافق أفضل مع FFmpeg)
+# نستخدم صورة 'slim' لتقليل حجم الصورة النهائية، وهي قائمة على Debian.
 FROM node:20-slim
 
-# 2. تثبيت التبعيات الإضافية للنظام (مثل FFmpeg)
-# تحديث قوائم الحزم وتثبيت FFmpeg وإزالة الملفات المؤقتة لتصغير حجم الصورة
+# 2. تثبيت التبعيات الإضافية للنظام: FFmpeg (لتشغيل الوسائط) و GIT (لحل خطأ npm install).
 RUN apt-get update && \
-    apt-get install -y ffmpeg && \
+    apt-get install -y ffmpeg git && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
 # 3. إعداد دليل العمل داخل الحاوية
 WORKDIR /usr/src/app
 
-# 4. نسخ ملفات تعريف المشروع أولاً (لتسهيل التخزين المؤقت لـ Docker)
-# نسخ package.json و package-lock.json
+# 4. نسخ ملفات تعريف المشروع أولاً (package.json و package-lock.json)
+# هذا يسمح لـ Docker بالتخزين المؤقت لخطوة npm install ما لم تتغير هذه الملفات.
 COPY package*.json ./
 
 # 5. تثبيت اعتمادات Node.js
-# هذه الخطوة تتوافق مع "Install Dependencies" في Workflow
 RUN npm install
 
-# 6. نسخ باقي ملفات المشروع إلى دليل العمل
-# هذه الخطوة تتوافق مع "Clone repository" في Workflow
+# 6. نسخ باقي ملفات المشروع
 COPY . .
 
-# 7. المنفذ الذي يستمع إليه التطبيق (إذا كان تطبيق ويب)
-# هذا اختياري، يمكنك تغييره حسب منفذ تطبيقك
+# 7. المنفذ الذي يستمع إليه التطبيق (إذا كان تطبيق ويب - يمكن حذفه إذا لم يكن تطبيق ويب)
 # EXPOSE 3000
 
 # 8. الأمر الافتراضي لتشغيل التطبيق
-# هذه الخطوة تتوافق مع "Start Project" في Workflow
 CMD [ "npm", "run", "start" ]
