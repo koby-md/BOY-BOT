@@ -14,7 +14,7 @@ const handler = async (m, { text, usedPrefix, command, conn }) => {
     const seconds = Math.floor((uptimeMilliseconds % (1000 * 60)) / 1000);
 
     // بناء الرسالة
-    const message = `⌛ مدة التشغيل: ${hours} ساعة، ${minutes} دقيقة، ${seconds} ثانية.
+    const message = `🌄 مدة التشغيل: ${hours} ساعة، ${minutes} دقيقة، ${seconds} ثانية.
 📅 التاريخ الحالي: ${day}.
 🕒 الوقت الحالي: ${time}.`;
 
