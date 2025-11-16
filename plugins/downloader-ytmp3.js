@@ -1,39 +1,32 @@
-import fetch from 'node-fetch'
+import axios from 'axios'
 
-let handler = async (m, { conn, text }) => {
-  if (!text) return m.reply('❌ يرجى إدخال رابط يوتيوب')
-
+let handler = async (m, { conn, args, usedPrefix, command }) => {
   try {
-    const apiUrl = `https://ruby-core.vercel.app/api/download/youtube/mp3?url=${encodeURIComponent(text)}`
-    const res = await fetch(apiUrl)
-    const data = await res.json()
+    if (!args[0]) return m.reply(`Usage: ${usedPrefix + command} <url>`)
 
-    if (!data.status) return m.reply('❌ فشل في الحصول على بيانات المقطع')
+    await conn.sendMessage(m.chat, { react: { text: '⏳', key: m.key } })
 
-    const info = data.metadata
-    const downloadUrl = data.download.url
-    const thumbnailUrl = info.thumbnail
-    const title = info.title
+    let url = `https://www.sankavollerei.com/download/ytmp3?apikey=planaai&url=${encodeURIComponent(args[0])}`
+    let res = await axios.get(url)
+    let json = res.data
 
-    
+    if (!json.status) return m.reply(`❌ Failed to fetch data from API`)
 
+    let { title, thumbnail, download, duration } = json.result
 
-    // إرسال الصوت كمقطع عادي (audio/mpeg)
     await conn.sendMessage(m.chat, {
-      audio: { url: downloadUrl },
+      audio: { url: download },
       mimetype: 'audio/mpeg',
-      fileName: `${title}.mp3`
+      fileName: `${title}.mp3`,
     }, { quoted: m })
 
-  } catch (error) {
-    console.error(error)
-    m.reply(`❌ حدث خطأ: ${error.message}`)
+  } catch (err) {
+    m.reply(`❌ Error\nError logs : ${err.message}`)
   }
 }
 
-handler.help = ['ytmp3 <url>']
-handler.tags = ['downloader']
-handler.command = /^(ytmp3|ytdlmp3)$/i
-handler.limit = false 
+handler.help = ['yta'];
+handler.tags = ['downloader'];
+handler.command = /^ya$/i;
 
 export default handler
