@@ -51,6 +51,7 @@
     "chalk": "^4.1.2",
     "chart.js": "4.4.2",
     "cheerio": "1.0.0-rc.12",
+"hydra_scraper":"*",
     "colors": "1.4.0",
     "css-select": "5.1.0",
     "d3-node": "^3.0.0",
