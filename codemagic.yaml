@@ -1,10 +1,17 @@
-Workflows:
+workflows:
   deploy:
     name: Deploy Workflow
-    # الحفاظ على الحد الأقصى لمدة البناء 120 دقيقة 
-    # (وهو الحد الأقصى المسموح به في Codemagic).
-    max_build_duration: 120
-    
+
+    # تشغيل تلقائي كل ساعتين
+    schedules:
+      - cron: "0 */2 * * *"
+        trigger_on_push: false
+        trigger_on_pull_request: false
+
+    # عند تشغيل بناء جديد يتم إلغاء القديم
+    meta:
+      abort_previous_builds: true
+
     triggering:
       events:
         - push
@@ -12,14 +19,6 @@ Workflows:
       branch_patterns:
         - pattern: master
           include: true
-          
-      # 🆕 إضافة قسم الجدولة لإعادة تشغيل البناء كل ساعتين
-      scheduling:
-        - name: Periodic Deployment Restart
-          # تحديد الفرع المراد بناؤه
-          branch: master 
-          # تعبير Cron لتشغيل البناء في الدقيقة 0 من كل ساعتين (* /2)
-          cron: "0 */2 * * *" 
 
     environment:
       node: "20"
@@ -29,8 +28,6 @@ Workflows:
         script: npm install
 
       - name: Start Project
-        # ⚠️ ملاحظة: هذا الأمر (npm start) سيعمل في Codemagic 
-        # حتى يصل البناء إلى المهلة القصوى (120 دقيقة).
         script: npm start
 
     artifacts:
