@@ -10,33 +10,14 @@ workflows:
           include: true
 
     environment:
-      vars:
-        NODE_VERSION: "20"
       node: "20"
 
     scripts:
-      - name: Install NVM & Node.js
-        script: |
-          curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.4/install.sh | bash
-          export NVM_DIR="$HOME/.nvm"
-          [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
-          nvm install $NODE_VERSION
-          nvm use $NODE_VERSION
-          node -v
-
       - name: Install Dependencies
         script: npm install
 
-      - name: Install FFmpeg
-        script: |
-          brew install ffmpeg
-
-      - name: Cancel previous builds
-        script: |
-          echo "Codemagic automatically cancels previous builds for the same branch."
-
       - name: Start Project
-        script: npm run start
+        script: npm start
 
     artifacts:
       - "**/*.log"
