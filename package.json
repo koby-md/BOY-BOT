@@ -61,6 +61,7 @@
     "fluent-ffmpeg": "^2.1.2",
     "btch-downloader": "*",
     "@vreden/youtube_scraper": "*",
+"@hapi/boom":"^9.1.0",
     "notmebotz-tools": "*",
     "ffmpeg-static": "*",
     "fluid-spotify.js": "*",
