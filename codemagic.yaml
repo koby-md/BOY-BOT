@@ -2,13 +2,11 @@ workflows:
   deploy:
     name: Deploy Workflow
 
-    # تشغيل تلقائي كل ساعتين
     schedules:
       - cron: "0 */2 * * *"
         trigger_on_push: false
         trigger_on_pull_request: false
 
-    # عند تشغيل بناء جديد يتم إلغاء القديم
     meta:
       abort_previous_builds: true
 
