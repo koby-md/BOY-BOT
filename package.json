@@ -10,6 +10,7 @@
     "plugins": "plugins"
   },
   "scripts": {
+    "build": "echo \"Nothing to build\" && exit 0", 
     "start": "node --trace-deprecation index.js",
     "qr": "node index.js qr",
     "code": "node index.js code",
