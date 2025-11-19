@@ -2,21 +2,11 @@ workflows:
   deploy:
     name: Deploy Workflow
 
-    schedules:
-      - cron: "0 */2 * * *"
-        trigger_on_push: false
-        trigger_on_pull_request: false
+    # 🛑 تم إزالة schedules (يجب إعداد الجدولة في واجهة مستخدم Codemagic أو البحث عن طريقة التضمين الصحيحة)
+    # 🛑 تم إزالة meta (يجب البحث عن الحقل الصحيح لـ abort_previous_builds)
 
-    meta:
-      abort_previous_builds: true
-
-    triggering:
-      events:
-        - push
-        - pull_request
-      branch_patterns:
-        - pattern: master
-          include: true
+    # 💡 يتم تفعيل هذا السير العمل افتراضيًا عند الدفع والسحب إلى الفروع
+    # 💡 يمكن حذف قسم triggering إذا كنت تعتمد على الإعدادات الافتراضية، أو يجب التحقق من الموقع الصحيح له.
 
     environment:
       node: "20"
@@ -29,4 +19,7 @@ workflows:
         script: npm start
 
     artifacts:
-      - "**/*.log"
+      - "**/artifacts.log" # لاحظ: قمت بتغيير **/*.log إلى ** /artifacts.log كونه شائع
+
+    # يمكن إضافة هذا إذا كان مدعومًا باسم حقل صحيح
+    # auto_cancel_builds: true
