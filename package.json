@@ -16,10 +16,9 @@
     "eslint": "eslint .",
     "eslintfix": "eslint --fix ."
   },
-"engines": {
-  "node": ">=20.0.0"
-},
-
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "homepage": "https://github.com/BrunoSobrino/TheMystic-Bot-MD",
   "author": {
     "name": "BrunoSobrino"
@@ -44,14 +43,14 @@
     "aptoide-scraper": "github:DIEGO-OFC/dv-aptoide-scraper",
     "awesome-phonenumber": "^2.68.0",
     "axios": "*",
-        "baileys": "github:BrunoSobrino/Baileys-Itsukichann",
+    "baileys": "github:BrunoSobrino/Baileys-Itsukichann",
     "body-parser": "^1.20.2",
     "browser-id3-writer": "*",
     "cfonts": "^2.10.0",
     "chalk": "^4.1.2",
     "chart.js": "4.4.2",
     "cheerio": "1.0.0-rc.12",
-"hydra_scraper":"*",
+    "hydra_scraper":"*",
     "colors": "1.4.0",
     "css-select": "5.1.0",
     "d3-node": "^3.0.0",
@@ -59,7 +58,7 @@
     "express": "^4.17.3",
     "file-type": "^17.1.1",
     "fluent-ffmpeg": "^2.1.2",
-        "btch-downloader": "*",
+    "btch-downloader": "*",
     "@vreden/youtube_scraper": "*",
     "notmebotz-tools": "*",
     "ffmpeg-static": "*",
@@ -72,7 +71,7 @@
     "hispamemes": "^1.0.7",
     "human-readable": "^0.2.1",
     "imagemaker.js": "^2.0.3",
-        "jimp": "^0.22.12",
+    "jimp": "^0.22.12",
     "jsdom": "^19.0.0",
     "libphonenumber-js": "*",
     "link-preview-js": "^3.0.0",
