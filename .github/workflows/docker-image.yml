@@ -14,15 +14,56 @@ jobs:
     runs-on: ubuntu-latest
 
     permissions:
-      id-token: write
       contents: read
       actions: write
 
     steps:
+      # 1️⃣ عند schedule فقط: إذا لا يوجد أي تشغيل، أعد تشغيل آخر Run
+      - name: Restart last run if none are running (schedule only)
+        if: github.event_name == 'schedule'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+
+            // اجلب 10 آخر عمليات تشغيل
+            const runs = await github.rest.actions.listWorkflowRuns({
+              owner,
+              repo,
+              workflow_id: context.workflow,
+              per_page: 10
+            });
+
+            const running = runs.data.workflow_runs.find(r => r.status === "in_progress" || r.status === "queued");
+
+            if (running) {
+              core.info("هناك تشغيل حالياً... لن يتم تشغيل أي شيء.");
+              return;
+            }
+
+            const lastRun = runs.data.workflow_runs[0];
+            if (!lastRun) {
+              core.info("لا توجد أي عمليات سابقة لإعادة تشغيلها.");
+              return;
+            }
+
+            core.info(`إعادة تشغيل آخر Run: ${lastRun.id}`);
+            await github.rest.actions.reRunWorkflow({
+              owner,
+              repo,
+              run_id: lastRun.id
+            });
+
+            core.info("تمت عملية إعادة التشغيل بنجاح.");
+            process.exit(0); // إنهاء المهمة هنا
+
+      # 2️⃣ عند push / PR: تشغيل طبيعي
       - name: Clone repository
+        if: github.event_name != 'schedule'
         uses: actions/checkout@v4
 
       - name: Install Node.js 20
+        if: github.event_name != 'schedule'
         run: |
           curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.4/install.sh | bash
           export NVM_DIR="$HOME/.nvm"
@@ -32,6 +73,7 @@ jobs:
           node -v
 
       - name: Cache node_modules
+        if: github.event_name != 'schedule'
         uses: actions/cache@v3
         with:
           path: node_modules
@@ -40,14 +82,15 @@ jobs:
             ${{ runner.os }}-node-
 
       - name: Install Dependencies
+        if: github.event_name != 'schedule'
         run: npm install
 
-
-
-      - name: Cancel Previous Runs
+      - name: Cancel Previous Runs (only for push / PR)
+        if: github.event_name != 'schedule'
         uses: styfle/cancel-workflow-action@0.11.0
         with:
           access_token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Start Project
+        if: github.event_name != 'schedule'
         run: npm run start
