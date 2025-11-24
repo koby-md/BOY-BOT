@@ -26,6 +26,15 @@ global.owner = [
 
 global.suittag = ['212697516525'];
 global.prems = [];
+// تعريف دالة react بشكل عام لكل رسالة
+global.reactMessage = async (conn, m, text) => {
+    if (!m || !conn) return;
+    try {
+        await conn.sendMessage(m.chat, { react: { text: text, key: m.key } });
+    } catch (e) {
+        console.log('Error en reactMessage:', e);
+    }
+};
 
 // Base Rest Api
 global.BASE_API_DELIRIUS = "https://delirius-apiofc.vercel.app";
