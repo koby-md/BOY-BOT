@@ -15,7 +15,9 @@
     "qr": "node index.js qr",
     "code": "node index.js code",
     "eslint": "eslint .",
-    "eslintfix": "eslint --fix ."
+    "eslintfix": "eslint --fix .",
+    "postinstall": "echo 'npm i'",
+    "test": "echo \"Error: no test specified\" && exit 0"
   },
   "engines": {
     "node": ">=20.0.0"
@@ -44,7 +46,7 @@
     "aptoide-scraper": "github:DIEGO-OFC/dv-aptoide-scraper",
     "awesome-phonenumber": "^2.68.0",
     "axios": "*",
-            "baileys": "github:BrunoSobrino/Baileys-Itsukichann",
+    "baileys": "github:BrunoSobrino/Baileys-Itsukichann",
     "body-parser": "^1.20.2",
     "browser-id3-writer": "*",
     "cfonts": "^2.10.0",
@@ -61,7 +63,7 @@
     "fluent-ffmpeg": "^2.1.2",
     "btch-downloader": "*",
     "@vreden/youtube_scraper": "*",
-"@hapi/boom":"^9.1.0",
+    "@hapi/boom":"^9.1.0",
     "notmebotz-tools": "^2.0.29",
     "ffmpeg-static": "*",
     "fluid-spotify.js": "*",
@@ -74,7 +76,6 @@
     "human-readable": "^0.2.1",
     "imagemaker.js": "^2.0.3",
     "jimp":"^0.22.12",
-
     "jsdom": "^19.0.0",
     "libphonenumber-js": "*",
     "link-preview-js": "^3.0.0",
