@@ -23,7 +23,7 @@ m.reply(wait);
         await conn.sendMessage(m.chat, {
             audio: { url: audio[0] },
             mimetype: 'audio/mp4',
-            ptt: true,
+            ptt: false,
             caption: `🎵 *تم تحميل الصوت:* ${title_audio}`
         });
     } catch (error) {
