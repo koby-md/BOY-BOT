@@ -6,4 +6,3 @@
 <p align="center">
   
 
-[![KOBY](https://qu.ax/HzRPk.jpg)](https://youtu.be/WcA7GZuaN0A)
