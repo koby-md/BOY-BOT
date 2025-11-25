@@ -1,6 +1,6 @@
 {
-  "appId": "com.ionic.Kobi",
-  "appName": "Kobi",
+  "appId": "com.ionic.botproject",
+  "appName": "BotProject",
   "webDir": "www",
   "bundledWebRuntime": false,
   "server": {
