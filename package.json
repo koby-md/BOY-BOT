@@ -62,7 +62,7 @@
     "btch-downloader": "*",
     "@vreden/youtube_scraper": "*",
 "@hapi/boom":"^9.1.0",
-    "notmebotz-tools": "^2.0.22",
+    "notmebotz-tools": "^2.0.29",
     "ffmpeg-static": "*",
     "fluid-spotify.js": "*",
     "formdata-node": "^4.3.2",
