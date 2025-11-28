@@ -1,4 +1,4 @@
-name: Deploy
+(name: Deploy
 
 on:
   push:
@@ -77,4 +77,4 @@ jobs:
           " > safe-runner.mjs
 
           echo "🚀 بدء تشغيل البوت مع حماية من SIGTERM/EPIPE..."
-          node safe-runner.mjs
+          node safe-runner.mjs)
