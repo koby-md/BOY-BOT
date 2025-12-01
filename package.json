@@ -11,7 +11,7 @@
   },
   "scripts": {
 "postinstall": "echo 'npm i'",
-"start": "node --trace-deprecation index.js",
+"start": "node index.js",
     "postinstall": "echo 'npm start'",
     "qr": "node index.js qr",
     "code": "node index.js code",
