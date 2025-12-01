@@ -10,7 +10,7 @@
     "plugins": "plugins"
   },
   "scripts": {
-"build":"npm i",
+"build":"npm i --production",
 
 "start": "node index.js",
    
