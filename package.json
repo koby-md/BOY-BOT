@@ -13,12 +13,8 @@
 "build":"npm i",
 
 "start": "node index.js",
-    "postinstall": "echo 'npm start'",
-    "qr": "node index.js qr",
-    "code": "node index.js code",
-    "eslint": "eslint .",
-    "eslintfix": "eslint --fix .",
-    "postinstall": "echo 'npm start'",
+   
+    "start": "npm start",
     "test": "echo \"Error: no test specified\" && exit 0"
   },
   "engines": {
