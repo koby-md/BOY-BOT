@@ -9,7 +9,7 @@
     "src": "src",
     "plugins": "plugins"
   },
-  "scripts": {  "scripts": {
+  "scripts": {
     "start": "node --trace-deprecation index.js",
     "qr": "node index.js qr",
     "code": "node index.js code",
