@@ -9,13 +9,12 @@
     "src": "src",
     "plugins": "plugins"
   },
-  "scripts": {
-"build":"npm i --production",
-
-"start": "node index.js",
-   
-    "start": "npm start",
-    "test": "echo \"Error: no test specified\" && exit 0"
+  "scripts": {  "scripts": {
+    "start": "node --trace-deprecation index.js",
+    "qr": "node index.js qr",
+    "code": "node index.js code",
+    "eslint": "eslint .",
+    "eslintfix": "eslint --fix ."
   },
   "engines": {
     "node": ">=20.0.0"
