@@ -1,76 +1,65 @@
-import fetch from 'node-fetch';
 import yts from 'yt-search';
 
-let handler = async (m, { conn, args }) => {
-  if (!args[0]) return conn.reply(m.chat, '*\`Ingresa el nombre de lo que quieres buscar\`*', m);
+let handler = async (m, { conn, usedPrefix, text }) => {
+    if (!text) {
+        return conn.reply(m.chat, 'Please provide the name of a YouTube video or channel.', m);
+    }
 
-  
-  try {
-    let res = await search(args.join(" "));
-    let video = res[0];
-    let img = await (await fetch(video.image)).buffer();
+    try {
+        let result = await yts(text);
+        let ytres = result.videos;
 
-    let txt = `*\`【Y O U T U B E - P L A Y】\`*\n\n`;
-    txt += `• *\`Título:\`* ${video.title}\n`;
-    txt += `• *\`Duración:\`* ${secondString(video.duration.seconds)}\n`;
-    txt += `• *\`Publicado:\`* ${eYear(video.ago)}\n`;
-    txt += `• *\`Canal:\`* ${video.author.name || 'Desconocido'}\n`;
-    txt += `• *\`Url:\`* _https://youtu.be/${video.videoId}_\n\n`;
+        if (!ytres || ytres.length === 0) {
+            return conn.reply(m.chat, 'No results found.', m);
+        }
 
-    await conn.sendMessage(m.chat, {
-      image: img,
-      caption: txt,
-      footer: 'Selecciona una opción',
-      buttons: [
-        {
-          buttonId: `.ytmp3 https://youtu.be/${video.videoId}`,
-          buttonText: {
-            displayText: '*🎵 Audio*',
-          },
-        },
-        {
-          buttonId: `.ytmp4 https://youtu.be/${video.videoId}`,
-          buttonText: {
-            displayText: '*🎥 Video*',
-          },
-        },
-      ],
-      viewOnce: true,
-      headerType: 4,
-    }, { quoted: m });
+        // أول نتيجة فقط
+        let v = ytres[0];
 
-    
-  } catch (e) {
-    console.error(e);
-    
-    conn.reply(m.chat, '*\`Error al buscar el video.\`*', m);
-  }
+        // 1️⃣ إرسال الصورة + العنوان + الرابط
+        await conn.sendMessage(
+            m.chat,
+            {
+                image: { url: v.thumbnail },
+                caption: `*${v.title}*\n${v.url}`
+            },
+            { quoted: m }
+        );
+
+        // 2️⃣ إرسال الأزرار فقط
+        let buttons = [
+            {
+                buttonId: `${usedPrefix}ytmp3 ${v.url}`,
+                buttonText: { displayText: '🎧 Audio' },
+                type: 1
+            },
+            {
+                buttonId: `${usedPrefix}ytmp4 ${v.url}`,
+                buttonText: { displayText: '🎬 Video' },
+                type: 1
+            }
+        ];
+
+        await conn.sendMessage(
+            m.chat,
+            {
+                text: '*_📥 إختر بأي وسيلة يمكنني التنزيل_*',
+                buttons,
+                footer: 'YouTube',
+                headerType: 1
+            },
+            { quoted: m }
+        );
+
+    } catch (e) {
+        console.log(e);
+        m.reply('Please try again.');
+    }
 };
 
-handler.help = ['play *<texto>*'];
-handler.tags = ['downloader'];
-handler.command = ['play'];
+handler.help = ['play'];
+handler.tags = ['dl'];
+handler.command = /^play|ytbuscar|yts(earch)?$/i;
+
 
 export default handler;
-
-async function search(query, options = {}) {
-  let search = await yts.search({ query, hl: "es", gl: "ES", ...options });
-  return search.videos;
-}
-
-function secondString(seconds) {
-  seconds = Number(seconds);
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = Math.floor(seconds % 60);
-  return `${h > 0 ? h + 'h ' : ''}${m}m ${s}s`;
-}
-
-function eYear(txt) {
-  if (txt.includes('year')) return txt.replace('year', 'año').replace('years', 'años');
-  if (txt.includes('month')) return txt.replace('month', 'mes').replace('months', 'meses');
-  if (txt.includes('day')) return txt.replace('day', 'día').replace('days', 'días');
-  if (txt.includes('hour')) return txt.replace('hour', 'hora').replace('hours', 'horas');
-  if (txt.includes('minute')) return txt.replace('minute', 'minuto').replace('minutes', 'minutos');
-  return txt;
-}
