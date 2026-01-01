@@ -13,53 +13,35 @@ let handler = async (m, { conn, usedPrefix, text }) => {
             return conn.reply(m.chat, 'No results found.', m);
         }
 
-        // أول نتيجة فقط
         let v = ytres[0];
 
-        // 1️⃣ إرسال الصورة + العنوان + الرابط
+        // مصفوفة الأزرار
+        let buttons = [
+            { buttonId: `${usedPrefix}ytmp3 ${v.url}`, buttonText: { displayText: '🎧 Audio' }, type: 1 },
+            { buttonId: `${usedPrefix}ytmp4 ${v.url}`, buttonText: { displayText: '🎬 Video' }, type: 1 }
+        ];
+
+        // إرسال الصورة مع العنوان والأزرار في رسالة واحدة
         await conn.sendMessage(
             m.chat,
             {
                 image: { url: v.thumbnail },
-                caption: `*${v.title}*\n${v.url}`
-            },
-            { quoted: m }
-        );
-
-        // 2️⃣ إرسال الأزرار فقط
-        let buttons = [
-            {
-                buttonId: `${usedPrefix}ytmp3 ${v.url}`,
-                buttonText: { displayText: '🎧 Audio' },
-                type: 1
-            },
-            {
-                buttonId: `${usedPrefix}ytmp4 ${v.url}`,
-                buttonText: { displayText: '🎬 Video' },
-                type: 1
-            }
-        ];
-
-        await conn.sendMessage(
-            m.chat,
-            {
-                text: '*_📥 إختر بأي وسيلة يمكنني التنزيل_*',
-                buttons,
-                footer: 'YouTube',
-                headerType: 1
+                caption: `*${v.title}*\n\n🔗 ${v.url}\n\n*_📥 إختر الوسيلة للتنزيل_*`,
+                footer: 'YouTube Search',
+                buttons: buttons,
+                headerType: 4
             },
             { quoted: m }
         );
 
     } catch (e) {
         console.log(e);
-        m.reply('Please try again.');
+        m.reply('حدث خطأ، يرجى المحاولة لاحقاً.');
     }
 };
 
 handler.help = ['play'];
 handler.tags = ['dl'];
 handler.command = /^play|ytbuscar|yts(earch)?$/i;
-
 
 export default handler;
