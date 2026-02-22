@@ -1,32 +1,104 @@
-import axios from 'axios'
+import crypto from "crypto"
+import axios from "axios"
 
-let handler = async (m, { conn, args, usedPrefix, command }) => {
-  try {
-    if (!args[0]) return m.reply(`Usage: ${usedPrefix + command} <url>`)
+class SaveTube {
+  constructor() {
+    this.ky = 'C5D58EF67A7584E4A29F6C35BBC4EB12'
+    this.m = /^((?:https?:)?\/\/)?((?:www|m|music)\.)?(?:youtube\.com|youtu\.be)\/(?:watch\?v=)?(?:embed\/)?(?:v\/)?(?:shorts\/)?([a-zA-Z0-9_-]{11})/
+    this.is = axios.create({
+      headers: {
+        'content-type': 'application/json',
+        'origin': 'https://yt.savetube.me',
+        'user-agent': 'Mozilla/5.0 (Android 15; Mobile)'
+      }
+    })
+  }
 
-    await conn.sendMessage(m.chat, { react: { text: '⏳', key: m.key } })
+  async decrypt(enc) {
+    const buf = Buffer.from(enc, 'base64')
+    const key = Buffer.from(this.ky, 'hex')
+    const iv = buf.slice(0, 16)
+    const data = buf.slice(16)
 
-    let url = `https://www.sankavollerei.com/download/ytmp3?apikey=planaai&url=${encodeURIComponent(args[0])}`
-    let res = await axios.get(url)
-    let json = res.data
+    const decipher = crypto.createDecipheriv('aes-128-cbc', key, iv)
+    const decrypted = Buffer.concat([
+      decipher.update(data),
+      decipher.final()
+    ])
 
-    if (!json.status) return m.reply(`❌ Failed to fetch data from API`)
+    return JSON.parse(decrypted.toString())
+  }
 
-    let { title, thumbnail, download, duration } = json.result
+  async getCdn() {
+    const res = await this.is.get("https://media.savetube.vip/api/random-cdn")
+    return { status: true, data: res.data.cdn }
+  }
 
-    await conn.sendMessage(m.chat, {
-      audio: { url: download },
-      mimetype: 'audio/mpeg',
-      fileName: `${title}.mp3`,
-    }, { quoted: m })
+  async download(url) {
+    const id = url.match(this.m)?.[3]
+    if (!id) throw "Invalid YouTube URL"
 
-  } catch (err) {
-    m.reply(`❌ Error\nError logs : ${err.message}`)
+    const cdn = await this.getCdn()
+    const info = await this.is.post(`https://${cdn.data}/v2/info`, {
+      url: `https://www.youtube.com/watch?v=${id}`
+    })
+
+    const dec = await this.decrypt(info.data.data)
+
+    const dl = await this.is.post(`https://${cdn.data}/download`, {
+      id,
+      downloadType: 'audio',
+      quality: '128',
+      key: dec.key
+    })
+
+    return {
+      title: dec.title,
+      duration: dec.duration,
+      thumb: dec.thumbnail,
+      download: dl.data.data.downloadUrl
+    }
   }
 }
 
-handler.help = ['yta'];
-handler.tags = ['downloader'];
-handler.command = /^ytmp3$/i;
+/* ================= HANDLER ================= */
+
+let handler = async (m, { conn, args }) => {
+  if (!args[0]) {
+    return m.reply(
+      `❌ Usage:\n.ytmp3 <youtube_url>\n\nExample:\n.ytmp3 https://youtu.be/U2vyax9Uufc`
+    )
+  }
+
+  const url = args[0]
+  const st = new SaveTube()
+
+  try {
+    m.reply(wait)
+
+    const res = await st.download(url)
+
+    let caption = `
+🎵 *Title:* ${res.title}
+⏱ *Duration:* ${res.duration}
+📦 *Format:* MP3
+`
+
+    await conn.sendMessage(m.chat, {
+      audio: { url: res.download },
+      mimetype: 'audio/mpeg',
+      fileName: `${res.title}.mp3`,
+      caption
+    }, { quoted: m })
+
+  } catch (e) {
+    m.reply(`❌ Error: ${e}`)
+  }
+}
+
+handler.help = ['ytmp3']
+handler.command = ['ytmp3']
+handler.tags = ['downloader']
+handler.limit = false 
 
 export default handler
