@@ -1,163 +1,144 @@
-import './config.js'
-import './function/settings/settings.js'
-import { fetchLatestBaileysVersion } from 'baileys'
-import cfont from "cfonts";
-import { spawn } from 'child_process';
-import { createInterface } from "readline";
-import { promises as fsPromises } from 'fs';
 import { join, dirname } from 'path';
+import { createRequire } from 'module';
 import { fileURLToPath } from 'url';
-import { sizeFormatter } from 'human-readable';
+import { setupMaster, fork } from 'cluster';
+import cfonts from 'cfonts';
+import readline from 'readline';
+import yargs from 'yargs';
+import chalk from 'chalk'; 
+import fs from 'fs'; 
+import './config.js';
 
-import axios from 'axios';
-import cheerio from "cheerio"
-import os from 'os';
-import path from 'path';
-import moment from 'moment-timezone'
-import fs from 'fs';
-import yargs from "yargs";
-import express from 'express';
-import chalk from 'chalk';
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const require = createRequire(__dirname);
+const { say } = cfonts;
+const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+let isRunning = false;
+let childProcess = null;
 
-let formatSize = sizeFormatter({
-        std: 'JEDEC',
-        decimalPlaces: '2',
-        keepTrailingZeroes: false,
-        render: (literal, symbol) => `${literal} ${symbol}B`
-})
-const { say } = cfont
-const { tz } = moment
-const app = express();
-const port = process.env.PORT || 7860;
-const time = tz('Africa/Casablanca').format('HH:mm:ss');
+const question = (texto) => new Promise((resolver) => rl.question(texto, resolver));
 
-// تصحيح استخراج المسار في بعض الأنظمة
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+console.log(chalk.yellow.bold('—◉ㅤIniciando sistema...'));
 
-say(info.figlet, {
-  font: "simpleBlock",
-  align: "center",
-  gradient: ["yellow", "cyan", "red"],
-  transitionGradient: 1,
-})
-say('by ' + info.nameown, {
-  font: "tiny",
-  align: "center",
-  colors: ["white"]
-})
-
-app.listen(port, () => {
-  console.log(chalk.green(`⚡ Port ${port} has opened`));
-});
-
-const folderPath = './tmp';
-if (!fs.existsSync(folderPath)) {
-    fs.mkdirSync(folderPath);
-    console.log(chalk.green('tmp folder created successfully.'));
+function verificarOCrearCarpetaAuth() {
+  const authPath = join(__dirname, global.authFile);
+  if (!fs.existsSync(authPath)) {
+    fs.mkdirSync(authPath, { recursive: true });
+  }
 }
 
-let isRunning = false;
-const rl = createInterface(process.stdin, process.stdout)
+function verificarCredsJson() {
+  const credsPath = join(__dirname, global.authFile, 'creds.json');
+  return fs.existsSync(credsPath);
+}
+
+function formatearNumeroTelefono(numero) {
+  let formattedNumber = numero.replace(/[^\d+]/g, '');
+  if (formattedNumber.startsWith('+52') && !formattedNumber.startsWith('+521')) {
+    formattedNumber = formattedNumber.replace('+52', '+521');
+  } else if (formattedNumber.startsWith('52') && !formattedNumber.startsWith('521')) {
+    formattedNumber = `+521${formattedNumber.slice(2)}`;
+  } else if (formattedNumber.startsWith('52') && formattedNumber.length >= 12) {
+    formattedNumber = `+${formattedNumber}`;
+  } else if (!formattedNumber.startsWith('+')) {
+    formattedNumber = `+${formattedNumber}`;
+  }
+  return formattedNumber;
+}
+
+function esNumeroValido(numeroTelefono) {
+  const regex = /^\+\d{7,15}$/;
+  return regex.test(numeroTelefono);
+}
 
 async function start(file) {
   if (isRunning) return;
   isRunning = true;
 
-  // --- منطق الفحص المضاف ---
-  const sessionFolder = './KOBYsession';
-  const credsFile = join(sessionFolder, 'creds.json');
-  
-  let additionalArgs = [...process.argv.slice(2)];
-
-  // إذا لم يكن ملف الجلسة موجوداً، نفرض استخدام الكود والرقم المحدد
-  if (!fs.existsSync(credsFile)) {
-    console.log(chalk.cyan('—◉ [ INFO ] No se encontró creds.json. Iniciando con Pairing Code...'));
-    const targetNumber = "212637904038";
-    additionalArgs.push('--phone', targetNumber, '--method', 'code');
-  } else {
-    console.log(chalk.green('—◉ [ INFO ] Sesión encontrada. Iniciando directamente...'));
-  }
-  // -----------------------
-
-  const args = [join(__dirname, file), ...additionalArgs];
-  
-  const p = spawn(process.argv[0], args, {
-    stdio: ['inherit', 'inherit', 'inherit', 'ipc'],
+  say('The Mystic\nBot', {
+    font: 'chrome',
+    align: 'center',
+    gradient: ['red', 'magenta'],
   });
 
-  p.on("message", data => {
-    console.log(chalk.magenta("[ ✅ Accepted  ]", data))
-    switch (data) {
-      case "reset":
-        p.kill()
-        isRunning = false
-        start(file)
-        break
-      case "uptime":
-        p.send(process.uptime())
-        break
+  say(`Bot creado por Bruno Sobrino`, {
+    font: 'console',
+    align: 'center',
+    gradient: ['red', 'magenta'],
+  });
+
+  verificarOCrearCarpetaAuth();
+
+  if (verificarCredsJson()) {
+    const args = [join(__dirname, file), ...process.argv.slice(2)];
+    setupMaster({ exec: args[0], args: args.slice(1) });
+    forkProcess(file);
+    return;
+  }
+
+  const opcion = await question(chalk.yellowBright.bold('—◉ㅤSeleccione una opción (solo el numero):\n') + chalk.white.bold('1. Con código QR\n2. Con código de texto de 8 dígitos\n—> '));
+
+  if (opcion === '2') {
+    const phoneNumber = await question(chalk.yellowBright.bold('\n—◉ㅤEscriba su número de WhatsApp:\n') + chalk.white.bold('◉ㅤEjemplo: +5219992095479\n—> '));
+    const numeroTelefono = formatearNumeroTelefono(phoneNumber);
+
+    if (!esNumeroValido(numeroTelefono)) {
+      console.log(chalk.bgRed(chalk.white.bold('[ ERROR ] Número inválido. Asegúrese de haber escrito su numero en formato internacional y haber comenzado con el código de país.\n—◉ㅤEjemplo:\n◉ +5219992095479\n')));
+      process.exit(0);
     }
-  })
 
-  p.on("exit", (_, code) => {
-    isRunning = false;
-    console.error("[❗] Exit with code :", code)
-    if (code !== 0) start(file)
-  })
-
-  let opts = new Object(yargs(additionalArgs).exitProcess(false).parse())
-  if (!opts["test"]) {
-    if (!rl.listenerCount()) rl.on("line", line => {
-      p.emit("message", line.trim())
-    })
+    process.argv.push('--phone=' + numeroTelefono);
+    process.argv.push('--method=code');
+  } else if (opcion === '1') {
+    process.argv.push('--method=qr');
   }
 
-  // طباعة لوحة التحكم والمعلومات
-  const packageJsonPath = join(__dirname, './package.json');
-  const pluginsFolder = join(__dirname, 'plugins');
-  
-  try {
-    const totalFoldersAndFiles = await getTotalFoldersAndFiles(pluginsFolder);
-    const packageJsonData = await fsPromises.readFile(packageJsonPath, 'utf-8');
-    const packageJsonObj = JSON.parse(packageJsonData);
-    const { data } = await axios.get('https://api.ipify.org').catch(() => ({ data: 'Unknown' }));
-    const ramInGB = os.totalmem() / (1024 * 1024 * 1024);
-    const freeRamInGB = os.freemem() / (1024 * 1024 * 1024);
-
-    console.table({
-      "⎔ Dashboard": " System ⎔",
-      "Name Bot": packageJsonObj.name,
-      "Version": packageJsonObj.version,
-      "Os": os.type(),
-      "Memory": freeRamInGB.toFixed(2) + ' / ' + ramInGB.toFixed(2),
-      "IP": data,
-      "Owner": global.info ? global.info.nomerown : 'Not Set',
-      "Feature": `${totalFoldersAndFiles.files} feature`,
-      "Mode": fs.existsSync(credsFile) ? "Session" : "Pairing Code"
-    })
-  } catch (err) {
-    console.error(chalk.red(`Dashboard Error: ${err}`));
-  }
+  const args = [join(__dirname, file), ...process.argv.slice(2)];
+  setupMaster({ exec: args[0], args: args.slice(1) });
+  forkProcess(file);
 }
 
-function getTotalFoldersAndFiles(folderPath) {
-  return new Promise((resolve) => {
-    if (!fs.existsSync(folderPath)) return resolve({ folders: 0, files: 0 });
-    fs.readdir(folderPath, (err, files) => {
-      if (err) return resolve({ folders: 0, files: 0 });
-      let folders = 0, filesCount = 0;
-      files.forEach((file) => {
-        const filePath = join(folderPath, file);
-        if (fs.statSync(filePath).isDirectory()) folders++;
-        else filesCount++;
-      });
-      resolve({ folders, files: filesCount });
-    });
+function forkProcess(file) {
+  childProcess = fork();
+
+  childProcess.on('message', (data) => {
+    console.log(chalk.green.bold('—◉ㅤRECIBIDO:'), data);
+    switch (data) {
+      case 'reset':
+        console.log(chalk.yellow.bold('—◉ㅤSolicitud de reinicio recibida...'));
+        childProcess.removeAllListeners();
+        childProcess.kill('SIGTERM');
+        isRunning = false;
+        setTimeout(() => start(file), 1000);
+        break;
+      case 'uptime':
+        childProcess.send(process.uptime());
+        break;
+    }
   });
+
+  childProcess.on('exit', (code, signal) => {
+    console.log(chalk.yellow.bold(`—◉ㅤProceso secundario terminado (${code || signal})`));
+    isRunning = false;
+    childProcess = null;
+
+    if (code !== 0 || signal === 'SIGTERM') {
+      console.log(chalk.yellow.bold('—◉ㅤReiniciando proceso...'));
+      setTimeout(() => start(file), 1000);
+    }
+  });
+
+  const opts = yargs(process.argv.slice(2)).argv;
+  if (!opts.test) {
+    rl.on('line', (line) => {
+      childProcess.emit('message', line.trim());
+    });
+  }
 }
 
-/**
-Starting the system
-**/
-start('main.js');
+try {
+  start('main.js');
+} catch (error) {
+  console.error(chalk.red.bold('[ ERROR CRÍTICO ]:'), error);
+  process.exit(1);
+}
