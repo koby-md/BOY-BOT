@@ -69,6 +69,7 @@ async function start(file) {
 
   verificarOCrearCarpetaAuth();
 
+  // إذا كانت الجلسة موجودة مسبقاً، يعمل البوت فوراً
   if (verificarCredsJson()) {
     const args = [join(__dirname, file), ...process.argv.slice(2)];
     setupMaster({ exec: args[0], args: args.slice(1) });
@@ -76,22 +77,20 @@ async function start(file) {
     return;
   }
 
-  const opcion = await question(chalk.yellowBright.bold('—◉ㅤSeleccione una opción (solo el numero):\n') + chalk.white.bold('1. Con código QR\n2. Con código de texto de 8 dígitos\n—> '));
+  // --- تم التعديل هنا: الدخول مباشرة لوضع الكود (Option 2) ---
+  console.log(chalk.cyan.bold('\n—◉ㅤMODO: VINCULACIÓN POR CÓDIGO (PAIRING CODE) ACTIVADO.'));
+  
+  const phoneNumber = await question(chalk.yellowBright.bold('\n—◉ㅤEscriba su número de WhatsApp:\n') + chalk.white.bold('◉ㅤEjemplo: +5219992095479\n—> '));
+  const numeroTelefono = formatearNumeroTelefono(phoneNumber);
 
-  if (opcion === '2') {
-    const phoneNumber = await question(chalk.yellowBright.bold('\n—◉ㅤEscriba su número de WhatsApp:\n') + chalk.white.bold('◉ㅤEjemplo: +5219992095479\n—> '));
-    const numeroTelefono = formatearNumeroTelefono(phoneNumber);
-
-    if (!esNumeroValido(numeroTelefono)) {
-      console.log(chalk.bgRed(chalk.white.bold('[ ERROR ] Número inválido. Asegúrese de haber escrito su numero en formato internacional y haber comenzado con el código de país.\n—◉ㅤEjemplo:\n◉ +5219992095479\n')));
-      process.exit(0);
-    }
-
-    process.argv.push('--phone=' + numeroTelefono);
-    process.argv.push('--method=code');
-  } else if (opcion === '1') {
-    process.argv.push('--method=qr');
+  if (!esNumeroValido(numeroTelefono)) {
+    console.log(chalk.bgRed(chalk.white.bold('[ ERROR ] Número inválido. Asegúrese de incluir el código de país.\n')));
+    process.exit(0);
   }
+
+  // تمرير الإعدادات تلقائياً للملف الرئيسي
+  process.argv.push('--phone=' + numeroTelefono);
+  process.argv.push('--method=code');
 
   const args = [join(__dirname, file), ...process.argv.slice(2)];
   setupMaster({ exec: args[0], args: args.slice(1) });
