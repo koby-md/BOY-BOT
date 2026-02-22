@@ -1,144 +1,114 @@
-import { join, dirname } from 'path';
-import { createRequire } from 'module';
-import { fileURLToPath } from 'url';
-import { setupMaster, fork } from 'cluster';
-import cfonts from 'cfonts';
-import readline from 'readline';
-import yargs from 'yargs';
-import chalk from 'chalk'; 
-import fs from 'fs'; 
-import './config.js';
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const require = createRequire(__dirname);
-const { say } = cfonts;
-const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-let isRunning = false;
-let childProcess = null;
-
-const question = (texto) => new Promise((resolver) => rl.question(texto, resolver));
-
-console.log(chalk.yellow.bold('—◉ㅤIniciando sistema...'));
-
-function verificarOCrearCarpetaAuth() {
-  const authPath = join(__dirname, global.authFile);
-  if (!fs.existsSync(authPath)) {
-    fs.mkdirSync(authPath, { recursive: true });
+{
+  "name": "TheMystic-Bot-MD",
+  "version": "1.0.0",
+  "description": "Un chatbot automatizado para WhatsApp basado en Node.js, que permite realizar múltiples funciones y personalizaciones en la plataforma.",
+  "main": "index.js",
+  "type": "module",
+  "directories": {
+    "lib": "lib",
+    "src": "src",
+    "plugins": "plugins"
+  },
+  "scripts": {
+    "start": "node --trace-deprecation index.js",
+    "qr": "node index.js qr",
+    "code": "node index.js code",
+    "eslint": "eslint .",
+    "eslintfix": "eslint --fix ."
+  },
+  "homepage": "https://github.com/BrunoSobrino/TheMystic-Bot-MD",
+  "author": {
+    "name": "BrunoSobrino"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BrunoSobrino/TheMystic-Bot-MD.git"
+  },
+  "bugs": {
+    "url": "https://github.com/BrunoSobrino/TheMystic-Bot-MD/issues"
+  },
+  "license": "GPL-3.0-or-later",
+  "dependencies": {
+    "@adiwajshing/keyed-db": "^0.2.4",
+    "@bochilteam/scraper": "^4.2.4",
+    "@brandond/findthelyrics": "^2.0.5",
+    "@green-code/music-track-data": "^2.0.3",
+    "@sefinek/google-tts-api": "*",
+    "@vitalets/google-translate-api": "^8.0.0",
+    "@shineiichijo/marika": "*",
+    "acrcloud": "^1.4.0",
+    "aptoide-scraper": "github:DIEGO-OFC/dv-aptoide-scraper",
+    "awesome-phonenumber": "^2.68.0",
+    "axios": "*",
+    "baileys": "github:Itsukichann/Baileys",
+    "body-parser": "^1.20.2",
+    "browser-id3-writer": "*",
+    "cfonts": "^2.10.0",
+    "chalk": "^4.1.2",
+    "chart.js": "4.4.2",
+    "cheerio": "1.0.0-rc.12",
+    "colors": "1.4.0",
+    "css-select": "5.1.0",
+    "d3-node": "^3.0.0",
+    "esm": "^3.2.25",
+    "express": "^4.17.3",
+    "fluent-ffmpeg": "^2.1.2",
+    "btch-downloader": "*",
+    "@vreden/youtube_scraper": "*",
+    "@hapi/boom":"^9.1.0",
+    "notmebotz-tools": "^2.0.29",
+    "ffmpeg-static": "*",
+    "file-type": "^17.1.1",
+    "fluent-ffmpeg": "^2.1.2",
+    "fluid-spotify.js": "*",
+    "formdata-node": "^4.3.2",
+    "fs": "^0.0.1-security",
+    "google-it": "^1.6.3",
+    "google-libphonenumber": "3.2.38",
+    "google-play-scraper": "^10.0.0",
+    "hispamemes": "^1.0.7",
+    "human-readable": "^0.2.1",
+    "imagemaker.js": "^2.0.3",
+    "jimp": "^0.22.12",
+    "jsdom": "^19.0.0",
+    "libphonenumber-js": "*",
+    "link-preview-js": "^3.0.0",
+    "lodash": "^4.17.21",
+    "lowdb": "^3.0.0",
+    "md5": "^2.3.0",
+    "megajs": "^1.1.3",
+    "moment-timezone": "^0.5.34",
+    "mongoose": "^6.3.3",
+    "node-cache": "^5.1.2",
+    "node-fetch": "^3.2.0",
+    "node-gtts": "^2.0.2",
+    "node-id3": "^0.2.6",
+    "node-shazam": "*",
+    "node-webpmux": "^3.1.1",
+    "pdfkit": "^0.13.0",
+    "perf_hooks": "^0.0.1",
+    "pino": "^7.8.0",
+    "pino-pretty": "^7.5.1",
+    "plotly": "^1.0.6",
+    "qrcode": "^1.5.0",
+    "qrcode-terminal": "^0.12.0",
+    "readline": "^1.3.0",
+    "sanzy-spotifydl": "*",
+    "similarity": "^1.2.1",
+    "simple-git": "^3.24.0",
+    "socket.io": "^4.4.1",
+    "syntax-error": "^1.4.0",
+    "terminal-image": "^2.0.0",
+    "url-regex-safe": "^3.0.0",
+    "yargs": "^17.3.1",
+    "yt-search": "^2.10.3",
+    "axios-cookiejar-support": "*"
+  },
+  "optionalDependencies": {
+    "puppeteer": "*",
+    "wa-sticker-formatter": "^4.3.2"
+  },
+  "devDependencies": {
+    "eslint": "^9.37.0"
   }
-}
-
-function verificarCredsJson() {
-  const credsPath = join(__dirname, global.authFile, 'creds.json');
-  return fs.existsSync(credsPath);
-}
-
-function formatearNumeroTelefono(numero) {
-  let formattedNumber = numero.replace(/[^\d+]/g, '');
-  if (formattedNumber.startsWith('+52') && !formattedNumber.startsWith('+521')) {
-    formattedNumber = formattedNumber.replace('+52', '+521');
-  } else if (formattedNumber.startsWith('52') && !formattedNumber.startsWith('521')) {
-    formattedNumber = `+521${formattedNumber.slice(2)}`;
-  } else if (formattedNumber.startsWith('52') && formattedNumber.length >= 12) {
-    formattedNumber = `+${formattedNumber}`;
-  } else if (!formattedNumber.startsWith('+')) {
-    formattedNumber = `+${formattedNumber}`;
-  }
-  return formattedNumber;
-}
-
-function esNumeroValido(numeroTelefono) {
-  const regex = /^\+\d{7,15}$/;
-  return regex.test(numeroTelefono);
-}
-
-async function start(file) {
-  if (isRunning) return;
-  isRunning = true;
-
-  say('The Mystic\nBot', {
-    font: 'chrome',
-    align: 'center',
-    gradient: ['red', 'magenta'],
-  });
-
-  say(`Bot creado por Bruno Sobrino`, {
-    font: 'console',
-    align: 'center',
-    gradient: ['red', 'magenta'],
-  });
-
-  verificarOCrearCarpetaAuth();
-
-  if (verificarCredsJson()) {
-    const args = [join(__dirname, file), ...process.argv.slice(2)];
-    setupMaster({ exec: args[0], args: args.slice(1) });
-    forkProcess(file);
-    return;
-  }
-
-  const opcion = await question(chalk.yellowBright.bold('—◉ㅤSeleccione una opción (solo el numero):\n') + chalk.white.bold('1. Con código QR\n2. Con código de texto de 8 dígitos\n—> '));
-
-  if (opcion === '2') {
-    const phoneNumber = await question(chalk.yellowBright.bold('\n—◉ㅤEscriba su número de WhatsApp:\n') + chalk.white.bold('◉ㅤEjemplo: +5219992095479\n—> '));
-    const numeroTelefono = formatearNumeroTelefono(phoneNumber);
-    
-    if (!esNumeroValido(numeroTelefono)) {
-      console.log(chalk.bgRed(chalk.white.bold('[ ERROR ] Número inválido. Asegúrese de haber escrito su numero en formato internacional y haber comenzado con el código de país.\n—◉ㅤEjemplo:\n◉ +5219992095479\n')));
-      process.exit(0);
-    }
-    
-    process.argv.push('--phone=' + numeroTelefono);
-    process.argv.push('--method=code');
-  } else if (opcion === '1') {
-    process.argv.push('--method=qr');
-  }
-  
-  const args = [join(__dirname, file), ...process.argv.slice(2)];
-  setupMaster({ exec: args[0], args: args.slice(1) });
-  forkProcess(file);
-}
-
-function forkProcess(file) {
-  childProcess = fork();
-
-  childProcess.on('message', (data) => {
-    console.log(chalk.green.bold('—◉ㅤRECIBIDO:'), data);
-    switch (data) {
-      case 'reset':
-        console.log(chalk.yellow.bold('—◉ㅤSolicitud de reinicio recibida...'));
-        childProcess.removeAllListeners();
-        childProcess.kill('SIGTERM');
-        isRunning = false;
-        setTimeout(() => start(file), 1000);
-        break;
-      case 'uptime':
-        childProcess.send(process.uptime());
-        break;
-    }
-  });
-
-  childProcess.on('exit', (code, signal) => {
-    console.log(chalk.yellow.bold(`—◉ㅤProceso secundario terminado (${code || signal})`));
-    isRunning = false;
-    childProcess = null;
-    
-    if (code !== 0 || signal === 'SIGTERM') {
-      console.log(chalk.yellow.bold('—◉ㅤReiniciando proceso...'));
-      setTimeout(() => start(file), 1000);
-    }
-  });
-
-  const opts = yargs(process.argv.slice(2)).argv;
-  if (!opts.test) {
-    rl.on('line', (line) => {
-      childProcess.emit('message', line.trim());
-    });
-  }
-}
-
-try {
-  start('main.js');
-} catch (error) {
-  console.error(chalk.red.bold('[ ERROR CRÍTICO ]:'), error);
-  process.exit(1);
 }
