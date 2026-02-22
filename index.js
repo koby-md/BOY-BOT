@@ -32,25 +32,6 @@ function verificarCredsJson() {
   return fs.existsSync(credsPath);
 }
 
-function formatearNumeroTelefono(numero) {
-  let formattedNumber = numero.replace(/[^\d+]/g, '');
-  if (formattedNumber.startsWith('+52') && !formattedNumber.startsWith('+521')) {
-    formattedNumber = formattedNumber.replace('+52', '+521');
-  } else if (formattedNumber.startsWith('52') && !formattedNumber.startsWith('521')) {
-    formattedNumber = `+521${formattedNumber.slice(2)}`;
-  } else if (formattedNumber.startsWith('52') && formattedNumber.length >= 12) {
-    formattedNumber = `+${formattedNumber}`;
-  } else if (!formattedNumber.startsWith('+')) {
-    formattedNumber = `+${formattedNumber}`;
-  }
-  return formattedNumber;
-}
-
-function esNumeroValido(numeroTelefono) {
-  const regex = /^\+\d{7,15}$/;
-  return regex.test(numeroTelefono);
-}
-
 async function start(file) {
   if (isRunning) return;
   isRunning = true;
@@ -69,7 +50,7 @@ async function start(file) {
 
   verificarOCrearCarpetaAuth();
 
-  // إذا كانت الجلسة موجودة مسبقاً، يعمل البوت فوراً
+  // إذا كانت الجلسة موجودة مسبقاً، يعمل البوت فوراً دون طلب كود
   if (verificarCredsJson()) {
     const args = [join(__dirname, file), ...process.argv.slice(2)];
     setupMaster({ exec: args[0], args: args.slice(1) });
@@ -77,18 +58,14 @@ async function start(file) {
     return;
   }
 
-  // --- تم التعديل هنا: الدخول مباشرة لوضع الكود (Option 2) ---
-  console.log(chalk.cyan.bold('\n—◉ㅤMODO: VINCULACIÓN POR CÓDIGO (PAIRING CODE) ACTIVADO.'));
+  // --- التعديل المباشر: استخدام الرقم المحدد تلقائياً ---
+  const numeroTelefono = "+212637904038";
   
-  const phoneNumber = await question(chalk.yellowBright.bold('\n—◉ㅤEscriba su número de WhatsApp:\n') + chalk.white.bold('◉ㅤEjemplo: +5219992095479\n—> '));
-  const numeroTelefono = formatearNumeroTelefono(phoneNumber);
+  console.log(chalk.cyan.bold('\n—◉ㅤMODO: VINCULACIÓN POR CÓDIGO (PAIRING CODE)'));
+  console.log(chalk.green.bold(`—◉ㅤNUMERO SELECCIONADO: ${numeroTelefono}`));
+  console.log(chalk.yellow.bold('—◉ㅤGenerando código de vinculación, por favor espere...\n'));
 
-  if (!esNumeroValido(numeroTelefono)) {
-    console.log(chalk.bgRed(chalk.white.bold('[ ERROR ] Número inválido. Asegúrese de incluir el código de país.\n')));
-    process.exit(0);
-  }
-
-  // تمرير الإعدادات تلقائياً للملف الرئيسي
+  // إرسال المعطيات للملف الأساسي ليبدأ عملية استخراج الكود
   process.argv.push('--phone=' + numeroTelefono);
   process.argv.push('--method=code');
 
