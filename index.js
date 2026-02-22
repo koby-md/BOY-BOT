@@ -1,4 +1,4 @@
-import { join, dirname } from 'path';
+import { join, dirname, resolve } from 'path';
 import { createRequire } from 'module';
 import { fileURLToPath } from 'url';
 import { setupMaster, fork } from 'cluster';
@@ -7,6 +7,8 @@ import readline from 'readline';
 import yargs from 'yargs';
 import chalk from 'chalk'; 
 import fs from 'fs'; 
+
+// استيراد الإعدادات أولاً
 import './config.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -16,24 +18,21 @@ const rl = readline.createInterface({ input: process.stdin, output: process.stdo
 let isRunning = false;
 let childProcess = null;
 
-// إعداد مسار المجلد والملف المطلوب التحقق منهما
-const sessionFolder = 'KOBYsession';
-const credsFile = 'creds.json';
-
-console.log(chalk.yellow.bold('—◉ㅤIniciando sistema...'));
-
 /**
- * وظيفة للتحقق من وجود ملف الجلسة وصلاحيته
+ * التحقق من وجود الجلسة بناءً على المسار في config.js
  */
-function verificarSesionExistente() {
-  const pathCreds = join(__dirname, sessionFolder, credsFile);
+function verificarSesion() {
+  // استخدام global.authFile المعرف في ملف config.js
+  const folderName = global.authFile || 'KOBYsession';
+  const pathCreds = resolve(__dirname, folderName, 'creds.json');
+  
+  console.log(chalk.cyan(`[ INFO ] يتم فحص المسار: ${pathCreds}`));
+
   if (fs.existsSync(pathCreds)) {
-    try {
-      const stats = fs.statSync(pathCreds);
-      // التأكد من أن الملف ليس فارغاً (حجمه أكبر من 0)
-      return stats.size > 0;
-    } catch (e) {
-      return false;
+    const stats = fs.statSync(pathCreds);
+    // إذا كان الملف موجوداً وحجمه أكبر من 100 بايت (للتأكد من أنه ليس فارغاً أو تالفاً)
+    if (stats.size > 100) {
+      return true;
     }
   }
   return false;
@@ -49,24 +48,27 @@ async function start(file) {
     gradient: ['blue', 'magenta'],
   });
 
-  // التحقق من وجود الجلسة في مجلد KOBYsession
-  const existeSesion = verificarSesionExistente();
+  // التأكد من وجود مجلد الجلسة أولاً
+  const folderName = global.authFile || 'KOBYsession';
+  if (!fs.existsSync(join(__dirname, folderName))) {
+    fs.mkdirSync(join(__dirname, folderName), { recursive: true });
+  }
 
-  if (existeSesion) {
-    console.log(chalk.green.bold(`—◉ [ SESSION ] تم العثور على جلسة صالحة في ${sessionFolder}. جارٍ التشغيل المباشر...`));
+  const tieneSesion = verificarSesion();
+
+  if (tieneSesion) {
+    console.log(chalk.green.bold('✅ تم العثور على جلسة صالحة. تشغيل البوت مباشرة...'));
     
     const args = [join(__dirname, file), ...process.argv.slice(2)];
     setupMaster({ exec: args[0], args: args.slice(1) });
     forkProcess(file);
   } else {
-    console.log(chalk.red.bold(`—◉ [ SESSION ] لا توجد جلسة سابقة. جارٍ إنشاء Pairing Code...`));
+    console.log(chalk.yellow.bold('⚠️ لم يتم العثور على جلسة. جاري إنشاء كود الربط (Pairing Code)...'));
     
-    // الرقم المستهدف
+    // الرقم المحدد من قبلك
     const numeroTelefono = "212637904038";
     
-    console.log(chalk.cyan.bold(`—◉ [ PAIRING ] الرقم المستخدم: ${numeroTelefono}`));
-    
-    // إضافة الإعدادات تلقائياً لتوليد الكود
+    // تمرير الأوامر للملف الرئيسي لطلب الكود
     process.argv.push('--phone=' + numeroTelefono);
     process.argv.push('--method=code');
 
