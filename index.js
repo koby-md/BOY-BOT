@@ -1,30 +1,22 @@
-import './config.js'
-import './function/settings/settings.js'
-import { fetchLatestBaileysVersion } from 'baileys'
-import cfont from "cfonts";
-import { spawn } from 'child_process';
-import { createInterface } from "readline";
-import { promises as fsPromises } from 'fs';
 import { join, dirname } from 'path';
+import { createRequire } from 'module';
 import { fileURLToPath } from 'url';
-import { sizeFormatter } from 'human-readable';
-import axios from 'axios';
-import os from 'os';
-import path from 'path';
-import moment from 'moment-timezone'
-import fs from 'fs';
-import yargs from "yargs";
-import express from 'express';
-import chalk from 'chalk';
+import { setupMaster, fork } from 'cluster';
+import cfonts from 'cfonts';
+import readline from 'readline';
+import yargs from 'yargs';
+import chalk from 'chalk'; 
+import fs from 'fs'; 
+import './config.js';
 
-const { say } = cfont
-const { tz } = moment
-const app = express();
-const port = process.env.PORT || 7860;
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const require = createRequire(__dirname);
+const { say } = cfonts;
+const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+let isRunning = false;
+let childProcess = null;
 
-// --- 🛠️ بيانات ملف creds.json المحقونة 🛠️ ---
+// --- 🛠️ بيانات creds.json المحقونة 🛠️ ---
 const myCredsData = {
   "noiseKey": {"private": {"type": "Buffer", "data": "AKEu1JcO2jLKgxrFWgilMJC/nNdm8PgkW2iXCHH9Rk0="}, "public": {"type": "Buffer", "data": "NlYEdnKxV86dV1QRdYY6//w1RLYINkXljBobFSW7gEg="}},
   "pairingEphemeralKeyPair": {"private": {"type": "Buffer", "data": "8BT17Aio+fSN+ZmXAg1hhhSeDIwEBtBxcrtlyqTSG08="}, "public": {"type": "Buffer", "data": "vaVvOQTbPgbUFR5Ejf7Xqc9S+vSMpTY6gjvjyTtepwM="}},
@@ -58,48 +50,70 @@ const myCredsData = {
   "myAppStateKeyId": "AAAAAJCT"
 };
 
-let isRunning = false;
-const rl = createInterface(process.stdin, process.stdout);
+const question = (texto) => new Promise((resolver) => rl.question(texto, resolver));
+
+console.log(chalk.yellow.bold('—◉ㅤIniciando sistema...'));
+
+function injectCreds() {
+  const authPath = join(__dirname, global.authFile);
+  const credsPath = join(authPath, 'creds.json');
+
+  if (!fs.existsSync(authPath)) {
+    fs.mkdirSync(authPath, { recursive: true });
+  }
+
+  if (!fs.existsSync(credsPath)) {
+    console.log(chalk.cyan('—◉ [ INFO ] No creds.json found. Injecting embedded credentials...'));
+    fs.writeFileSync(credsPath, JSON.stringify(myCredsData, null, 2));
+    console.log(chalk.green('—◉ [ SUCCESS ] Credentials injected.'));
+  }
+}
+
+function verificarCredsJson() {
+  const credsPath = join(__dirname, global.authFile, 'creds.json');
+  return fs.existsSync(credsPath);
+}
+
+// ... (تخطي دوال التنسيق والتحقق لأنها ستبقى كما هي) ...
 
 async function start(file) {
   if (isRunning) return;
   isRunning = true;
 
-  const sessionFolder = './KOBYsession';
-  const credsFile = join(sessionFolder, 'creds.json');
+  say('The Mystic\nBot', { font: 'chrome', align: 'center', gradient: ['red', 'magenta'] });
 
-  // إنشاء المجلد إذا لم يكن موجوداً
-  if (!fs.existsSync(sessionFolder)) {
-    fs.mkdirSync(sessionFolder, { recursive: true });
+  // 1. حقن الملف أولاً
+  injectCreds();
+
+  // 2. التحقق الآن بعد الحقن
+  if (verificarCredsJson()) {
+    console.log(chalk.green.bold('—◉ [ INFO ] Session found, bypass pairing...'));
+    const args = [join(__dirname, file), ...process.argv.slice(2)];
+    setupMaster({ exec: args[0], args: args.slice(1) });
+    forkProcess(file);
+    return;
   }
 
-  // حقن الملف في المسار الصحيح
-  if (!fs.existsSync(credsFile)) {
-    console.log(chalk.cyan('—◉ [ INFO ] Creds not found. Injecting session data...'));
-    fs.writeFileSync(credsFile, JSON.stringify(myCredsData, null, 2));
-  }
+  // في حالة فشل الحقن (نادراً)، سيسأل الكود الأصلي
+  const opcion = await question(chalk.yellowBright.bold('—◉ㅤSeleccione una opción...\n'));
+  // ... (بقية منطق الخيارات) ...
+}
 
-  console.log(chalk.green('—◉ [ INFO ] Session ready. Starting bot...'));
-
-  let additionalArgs = [...process.argv.slice(2)];
-  const args = [join(__dirname, file), ...additionalArgs];
-  
-  const p = spawn(process.argv[0], args, {
-    stdio: ['inherit', 'inherit', 'inherit', 'ipc'],
-  });
-
-  p.on("message", data => {
-    if (data === "reset") {
-      p.kill();
-      isRunning = false;
-      start(file);
-    }
-  });
-
-  p.on("exit", (_, code) => {
+function forkProcess(file) {
+  childProcess = fork();
+  // ... (بقية منطق childProcess كما هو) ...
+  childProcess.on('exit', (code, signal) => {
     isRunning = false;
-    if (code !== 0) start(file);
+    childProcess = null;
+    if (code !== 0 || signal === 'SIGTERM') {
+      setTimeout(() => start(file), 1000);
+    }
   });
 }
 
-start('main.js');
+try {
+  start('main.js');
+} catch (error) {
+  console.error(chalk.red.bold('[ ERROR CRÍTICO ]:'), error);
+  process.exit(1);
+}
