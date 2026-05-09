@@ -1,4 +1,4 @@
-import { fbdown } from 'btch-downloader';
+ import { fbdown } from 'btch-downloader';
 
 const handler = async (m, { conn }) => {
     const messageText = m.text.trim(); // استخدام m.text للحصول على محتوى الرسالة
