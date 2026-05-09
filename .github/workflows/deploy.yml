@@ -6,12 +6,14 @@ on:
   pull_request:
     branches: [master]
   schedule:
-    - cron: "0 */6 * * *"  # تشغيل كل 6 ساعات
+    - cron: "0 */6 * * *"  # كيعاود يخدم كل 6 سوايع
 
 jobs:
   deploy:
     name: Deploy
     runs-on: ubuntu-latest
+    # هاد السطر كيعطي وقت محدد للـ Job كامل باش يطفى بزز
+    timeout-minutes: 350 
 
     permissions:
       id-token: write
@@ -23,13 +25,9 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install Node.js 20
-        run: |
-          curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.4/install.sh | bash
-          export NVM_DIR="$HOME/.nvm"
-          [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
-          nvm install 20
-          nvm use 20
-          node -v
+        uses: actions/setup-node@v3 # هادي أحسن وأسرع من curl فـ GitHub Actions
+        with:
+          node-version: 20
 
       - name: Cache node_modules
         uses: actions/cache@v3
@@ -42,12 +40,12 @@ jobs:
       - name: Install Dependencies
         run: npm install
 
-  
-
       - name: Cancel Previous Runs
         uses: styfle/cancel-workflow-action@0.11.0
         with:
-          access_token: ${{ secrets.GITHUB_TOKEN }}
+          access_token: ${{ github.token }} # استعمل هادي أحسن
 
       - name: Start Project
+        # هنا كنقولو ليه طفي هاد المرحلة بزز قبل ما يوصل السقف ديال GitHub
+        timeout-minutes: 345 
         run: npm run start
