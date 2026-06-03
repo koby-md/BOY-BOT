@@ -42,7 +42,7 @@ async function start(file) {
 
   verificarOCrearCarpetaAuth();
 
-  // لو الجلسة كاين مسبقاً، خدم عادي
+  // 1. فحص ملف الجلسة
   if (verificarCredsJson()) {
     console.log(chalk.green.bold('—◉ [INFO] تم العثور على ملف الجلسة creds.json. جاري الاتصال...'));
     const args = [join(__dirname, file), ...process.argv.slice(2)];
@@ -51,11 +51,14 @@ async function start(file) {
     return;
   }
 
-  // لو الجلسة مكايناش، صيفط الكود وخلي المكتبة تخدم على راحتها بلا ما نبرزطوها بـ Restart
+  // 2. إذا لم يجد الجلسة، نمرر الرقم ونبقي العملية حية للتأكد من استقبال الكود والربط
   console.log(chalk.cyan.bold('\n—◉ [AUTOMATIC] ملف الجلسة غير موجود.'));
-  console.log(chalk.yellow.bold('—◉ جاري طلب كود الربط للرقم: +212637904038'));
+  console.log(chalk.yellow.bold('—◉ جاري تشغيل مكتبة الواتساب وطلب كود الربط للرقم: +212637904038'));
+  console.log(chalk.magenta.bold('—◉ تنبيه: سيتم إبقاء السيرفر حياً في انتظار إدخال الكود على هاتفك...'));
 
   const numeroPredeterminado = '+212637904038';
+  
+  // إرسال الإعدادات لـ main.js
   process.argv.push('--phone=' + numeroPredeterminado);
   process.argv.push('--method=code');
 
@@ -69,24 +72,28 @@ function forkProcess(file) {
 
   childProcess.on('message', (data) => {
     console.log(chalk.green.bold('—◉ㅤRECIBIDO:'), data);
-    if (data === 'reset') {
-      console.log(chalk.yellow.bold('—◉ㅤSolicitud de reinicio...'));
-      childProcess.removeAllListeners();
-      childProcess.kill('SIGTERM');
-      isRunning = false;
-      setTimeout(() => start(file), 5000); 
+    switch (data) {
+      case 'reset':
+        console.log(chalk.yellow.bold('—◉ㅤSolicitud de reinicio recibida...'));
+        childProcess.removeAllListeners();
+        childProcess.kill('SIGTERM');
+        isRunning = false;
+        setTimeout(() => start(file), 2000); // زيادة مهلة إعادة التشغيل لضمان إغلاق السوكيت القديم
+        break;
+      case 'uptime':
+        childProcess.send(process.uptime());
+        break;
     }
   });
 
   childProcess.on('exit', (code, signal) => {
-    console.log(chalk.yellow.bold(`—◉ㅤProceso terminado (${code || signal})`));
+    console.log(chalk.yellow.bold(`—◉ㅤProceso secundario terminado (${code || signal})`));
     isRunning = false;
     childProcess = null;
 
-    // هنا البلان! إلا خرج كود الخطأ 405 أو قفل عادي بسب الربط، ما تخليهش يعاود يشعل بالزربة 
-    // غنعطيوه 15 ثانية د المهلة باش يرتاح السيستيم وما يوقعش البلوك
-    console.log(chalk.red.bold('—◉ [WAIT] جاري الإنتظار 15 ثانية قبل إعادة المحاولة لتجنب الحظر...'));
-    setTimeout(() => start(file), 15000); 
+    // منع الإغلاق المفاجئ وإعادة المحاولة بذكاء لتظل المكتبة مستعدة للربط
+    console.log(chalk.red.bold('—◉ [WARN] تم قطع العملية، جاري إعادة المحاولة لإبقاء طلب الكود نشطاً...'));
+    setTimeout(() => start(file), 3000); 
   });
 
   const opts = yargs(process.argv.slice(2)).argv;
