@@ -16,8 +16,6 @@ const rl = readline.createInterface({ input: process.stdin, output: process.stdo
 let isRunning = false;
 let childProcess = null;
 
-const question = (texto) => new Promise((resolver) => rl.question(texto, resolver));
-
 console.log(chalk.yellow.bold('—◉ㅤIniciando sistema...'));
 
 function verificarOCrearCarpetaAuth() {
@@ -42,31 +40,25 @@ async function start(file) {
     gradient: ['red', 'magenta'],
   });
 
-  say(`Bot creado por Bruno Sobrino`, {
-    font: 'console',
-    align: 'center',
-    gradient: ['red', 'magenta'],
-  });
-
-  // التأكد من وجود المجلد
   verificarOCrearCarpetaAuth();
 
-  // 1. فحص ملف creds.json داخل مجلد الجلسة
+  // 1. فحص ملف الجلسة
   if (verificarCredsJson()) {
-    console.log(chalk.green.bold('—◉ [INFO] تم العثور على ملف الجلسة creds.json بنجاح. جاري الاتصال...'));
+    console.log(chalk.green.bold('—◉ [INFO] تم العثور على ملف الجلسة creds.json. جاري الاتصال...'));
     const args = [join(__dirname, file), ...process.argv.slice(2)];
     setupMaster({ exec: args[0], args: args.slice(1) });
     forkProcess(file);
     return;
   }
 
-  // 2. إذا لم يجد الملف (أو فشل الربط)، يتم التوجيه مباشرة للربط عبر الكود بالرقم المحدد
-  console.log(chalk.cyan.bold('\n—◉ [AUTOMATIC] ملف الجلسة غير موجود أو غير صالح.'));
-  console.log(chalk.yellow.bold('—◉ جاري طلب كود التقران (Pairing Code) تلقائياً للرقم: +212637904038\n'));
+  // 2. إذا لم يجد الجلسة، نمرر الرقم ونبقي العملية حية للتأكد من استقبال الكود والربط
+  console.log(chalk.cyan.bold('\n—◉ [AUTOMATIC] ملف الجلسة غير موجود.'));
+  console.log(chalk.yellow.bold('—◉ جاري تشغيل مكتبة الواتساب وطلب كود الربط للرقم: +212637904038'));
+  console.log(chalk.magenta.bold('—◉ تنبيه: سيتم إبقاء السيرفر حياً في انتظار إدخال الكود على هاتفك...'));
 
   const numeroPredeterminado = '+212637904038';
   
-  // دفع الإعدادات تلقائياً بدون طرح أي سؤال في الـ Terminal
+  // إرسال الإعدادات لـ main.js
   process.argv.push('--phone=' + numeroPredeterminado);
   process.argv.push('--method=code');
 
@@ -86,7 +78,7 @@ function forkProcess(file) {
         childProcess.removeAllListeners();
         childProcess.kill('SIGTERM');
         isRunning = false;
-        setTimeout(() => start(file), 1000);
+        setTimeout(() => start(file), 2000); // زيادة مهلة إعادة التشغيل لضمان إغلاق السوكيت القديم
         break;
       case 'uptime':
         childProcess.send(process.uptime());
@@ -99,10 +91,9 @@ function forkProcess(file) {
     isRunning = false;
     childProcess = null;
 
-    if (code !== 0 || signal === 'SIGTERM') {
-      console.log(chalk.yellow.bold('—◉ㅤReiniciando proceso...'));
-      setTimeout(() => start(file), 1000);
-    }
+    // منع الإغلاق المفاجئ وإعادة المحاولة بذكاء لتظل المكتبة مستعدة للربط
+    console.log(chalk.red.bold('—◉ [WARN] تم قطع العملية، جاري إعادة المحاولة لإبقاء طلب الكود نشطاً...'));
+    setTimeout(() => start(file), 3000); 
   });
 
   const opts = yargs(process.argv.slice(2)).argv;
