@@ -1,12 +1,26 @@
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import FileType from 'file-type';
-import PhoneNumber from 'awesome-phonenumber';
+// Fix 2026 - MysticBot and Fu*k You Meta® - LID Fix 99% - replace lids for numbers real.
+import path from "path";
+import { toAudio } from "./converter.js";
+import chalk from "chalk";
+import fetch from "node-fetch";
+import PhoneNumber from "awesome-phonenumber";
+import fs from "fs";
+import util from "util";
+import crypto from "crypto"; // تم إصلاح استيراد randomBytes هنا
+import { fileTypeFromBuffer } from "file-type";
+import { format } from "util";
+import { fileURLToPath } from "url";
+import store from "./store.js";
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+/**
+ * @type {import("baileys")}
+ */
 const {
     default: _makeWaSocket,
     makeWALegacySocket,
+    proto,
     downloadContentFromMessage,
     jidDecode,
     areJidsSameUser,
@@ -20,187 +34,1090 @@ const {
     prepareWAMessageMedia,
     WA_DEFAULT_EPHEMERAL,
     PHONENUMBER_MCC,
-    WAProto // تعديل للمكتبة الجديدة
-} = (await import("@whiskeysockets/baileys")).default;
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+} = (await import("baileys")).default;
 
 export function makeWASocket(connectionOptions, options = {}) {
-    let conn = _makeWaSocket(connectionOptions);
+    /**
+     * @type {import("baileys").WASocket | import("baileys").WALegacySocket}
+     */
+    const conn = (global.opts["legacy"] ? makeWALegacySocket : _makeWaSocket)(
+        connectionOptions,
+    );
 
-    Object.defineProperties(conn, {
-        // ... (دالات الإعدادات الأساسية للبوت)
-    });
-
-    conn.sendNCarousel = async (jid, footer, slides, options = {}) => {
-        const cards = [];
-        for (const slide of slides) {
-            let media = {};
-            if (slide.image) {
-                const upload = await conn.waUploadToServer(slide.image, { typeof: 'image' });
-                media = { imageMessage: { url: upload.url } };
-            } else if (slide.video) {
-                const upload = await conn.waUploadToServer(slide.video, { typeof: 'video' });
-                media = { videoMessage: { url: upload.url } };
-            }
-            cards.push({
-                body: { text: slide.body || '' },
-                footer: { text: slide.footer || '' },
-                header: {
-                    title: slide.title || '',
-                    hasMediaAttachment: !!(slide.image || slide.video),
-                    ...media
-                },
-                nativeFlowMessage: {
-                    buttons: slide.buttons || []
-                }
-            });
-        }
-        const messageContent = WAProto.Message.fromObject({
-            viewOnceMessage: {
-                message: {
-                    interactiveMessage: {
-                        body: { text: options.body || '' },
-                        footer: { text: footer || '' },
-                        header: { hasMediaAttachment: false },
-                        carouselMessage: { cards }
-                    }
-                }
-            }
-        });
-        return await conn.relayMessage(jid, messageContent, {});
-    };
-
-    conn.sendCarousel = async (jid, text = '', footer = '', cards = [], options = {}) => {
-        async function getMediaMessage(media) {
-            if (!media) return null;
-            const type = Object.keys(media)[0];
-            const content = await prepareWAMessageMedia(media, { upload: conn.waUploadToServer });
-            return { hasMediaAttachment: true, [`${type}Message`]: content[`${type}Message`] };
-        }
-        const formattedCards = await Promise.all(cards.map(async (card) => {
-            const header = card.media ? await getMediaMessage(card.media) : { hasMediaAttachment: false };
-            return {
-                body: WAProto.Message.InteractiveMessage.Body.fromObject({ text: card.body || '' }),
-                footer: WAProto.Message.InteractiveMessage.Footer.fromObject({ text: card.footer || '' }),
-                header: WAProto.Message.InteractiveMessage.Header.fromObject({
-                    title: card.title || '',
-                    subtitle: card.subtitle || '',
-                    ...header
-                }),
-                nativeFlowMessage: WAProto.Message.InteractiveMessage.NativeFlowMessage.fromObject({
-                    buttons: card.buttons || []
-                })
-            };
-        }));
-        const messageContent = WAProto.Message.fromObject({
-            viewOnceMessage: {
-                message: {
-                    interactiveMessage: WAProto.Message.InteractiveMessage.create({
-                        body: WAProto.Message.InteractiveMessage.Body.fromObject({ text }),
-                        footer: WAProto.Message.InteractiveMessage.Footer.fromObject({ text: footer }),
-                        header: WAProto.Message.InteractiveMessage.Header.fromObject({ hasMediaAttachment: false }),
-                        carouselMessage: WAProto.Message.InteractiveMessage.CarouselMessage.fromObject({
-                            cards: formattedCards
-                        })
-                    })
-                }
-            }
-        });
-        return await conn.relayMessage(jid, messageContent, { messageId: options.quoted?.key?.id });
-    };
-
-    conn.sendGroupV4Invite = async (jid, participant, inviteCode, inviteExpiration, groupName, caption = 'Group Invite', options = {}) => {
-        const msg = WAProto.Message.fromObject({
-            groupInviteMessage: {
-                inviteCode,
-                inviteExpiration: parseInt(inviteExpiration) || Math.floor(Date.now() / 1000) + (3 * 24 * 60 * 60),
-                groupJid: jid,
-                groupName: groupName || conn.getName(jid),
-                caption
-            }
-        });
-        return await conn.relayMessage(participant, msg, options);
-    };
-
-    conn.cMod = (jid, message, text = '', sender = conn.user.id, options = {}) => {
-        let copy = WAProto.WebMessageInfo.fromObject(WAProto.WebMessageInfo.toObject(message));
-        let type = Object.keys(copy.message)[0];
-        let isEphemeral = type === 'ephemeralMessage';
-        if (isEphemeral) {
-            type = Object.keys(copy.message.ephemeralMessage.message)[0];
-        }
-        let msg = isEphemeral ? copy.message.ephemeralMessage.message : copy.message;
-        let content = msg[type];
-        if (typeof content === 'string') msg[type] = text;
-        else if (content.caption) content.caption = text;
-        else if (content.text) content.text = text;
-        if (typeof content !== 'string') msg[type] = { ...content, ...options };
-        if (copy.key.participant) sender = copy.key.participant = sender || copy.key.participant;
-        else if (copy.key.fromMe) sender = copy.key.participant = conn.user.id;
-        if (copy.key.fromMe) delete copy.key.participant;
-        return WAProto.WebMessageInfo.fromObject(copy);
-    };
-
-    return conn;
-}
-        serializeM: {
-            /**
-             * Serialize Message, so it easier to manipulate
-             * @param {import("@whiskeysockets/baileys").proto.WebMessageInfo} m
-             */
-            value(m) {
-                return smsg(conn, m);
+    const sock = Object.defineProperties(conn, {
+        chats: {
+            value: { ...(options.chats || {}) },
+            writable: true,
+        },
+        decodeJid: {
+            value(jid) {
+                if (!jid || typeof jid !== "string") return jid ?? null;
+                return jid.decodeJid();
             },
         },
-        ...(typeof conn.chatRead !== "function" ?
-            {
-                chatRead: {
-                    value(jid, participant = conn.user.jid, messageID) {
-                        return conn.sendReadReceipt(jid, participant, [messageID]);
+        logger: {
+            get() {
+                return {
+                    info(...args) {
+                        console.log(
+                            chalk.bold.bgRgb(51, 204, 51)("INFO "),
+                            `[${chalk.rgb(255, 255, 255)(new Date().toUTCString())}]:`,
+                            chalk.cyan(format(...args)),
+                        );
                     },
-                    enumerable: true,
-                },
-            } :
-            {}),
-        ...(typeof conn.setStatus !== "function" ?
-            {
-                setStatus: {
-                    value(status) {
-                        return conn.query({
-                            tag: "iq",
-                            attrs: {
-                                to: "s.whatsapp.net",
-                                type: "set",
-                                xmlns: "status",
+                    error(...args) {
+                        console.log(
+                            chalk.bold.bgRgb(247, 38, 33)("ERROR "),
+                            `[${chalk.rgb(255, 255, 255)(new Date().toUTCString())}]:`,
+                            chalk.rgb(255, 38, 0)(format(...args)),
+                        );
+                    },
+                    warn(...args) {
+                        console.log(
+                            chalk.bold.bgRgb(255, 153, 0)("WARNING "),
+                            `[${chalk.rgb(255, 255, 255)(new Date().toUTCString())}]:`,
+                            chalk.redBright(format(...args)),
+                        );
+                    },
+                    trace(...args) {
+                        console.log(
+                            chalk.grey("TRACE "),
+                            `[${chalk.rgb(255, 255, 255)(new Date().toUTCString())}]:`,
+                            chalk.white(format(...args)),
+                        );
+                    },
+                    debug(...args) {
+                        console.log(
+                            chalk.bold.bgRgb(66, 167, 245)("DEBUG "),
+                            `[${chalk.rgb(255, 255, 255)(new Date().toUTCString())}]:`,
+                            chalk.white(format(...args)),
+                        );
+                    },
+                };
+            },
+            enumerable: true,
+        },
+        sendNyanCat: {
+            async value(jid, text = "", buffer, title, body, url, quoted, options) {
+                if (buffer) {
+                    try {
+                        let type = await conn.getFile(buffer);
+                        buffer = type.data;
+                    } catch {
+                        buffer = buffer;
+                    }
+                }
+                const prep = generateWAMessageFromContent(
+                    jid, {
+                        extendedTextMessage: {
+                            text: text,
+                            contextInfo: {
+                                externalAdReply: {
+                                    title: title,
+                                    body: body,
+                                    thumbnail: buffer,
+                                    sourceUrl: url,
+                                },
+                                mentionedJid: await conn.parseMention(text),
                             },
-                            content: [{
-                                tag: "status",
-                                attrs: {},
-                                content: Buffer.from(status, "utf-8"),
-                            }, ],
-                        });
+                        },
+                    }, { quoted: quoted },
+                );
+                return conn.relayMessage(jid, prep.message, { messageId: prep.key.id });
+            },
+        },
+        sendPayment: {
+            async value(jid, amount, text, quoted, options) {
+                conn.relayMessage(
+                    jid, {
+                        requestPaymentMessage: {
+                            currencyCodeIso4217: "PEN",
+                            amount1000: amount,
+                            requestFrom: null,
+                            noteMessage: {
+                                extendedTextMessage: {
+                                    text: text,
+                                    contextInfo: {
+                                        externalAdReply: {
+                                            showAdAttribution: true,
+                                        },
+                                        mentionedJid: conn.parseMention(text),
+                                    },
+                                },
+                            },
+                        },
+                    }, {},
+                );
+            },
+        },
+        getFile: {
+            async value(PATH, saveToFile = false) {
+                let res;
+                let filename;
+                const data = Buffer.isBuffer(PATH) ?
+                    PATH :
+                    PATH instanceof ArrayBuffer ?
+                    PATH.toBuffer() :
+                    /^data:.*?\/.*?;base64,/i.test(PATH) ?
+                    Buffer.from(PATH.split`,`[1], "base64") :
+                    /^https?:\/\//.test(PATH) ?
+                    await (res = await fetch(PATH)).buffer() :
+                    fs.existsSync(PATH) ?
+                    ((filename = PATH), fs.readFileSync(PATH)) :
+                    typeof PATH === "string" ?
+                    PATH :
+                    Buffer.alloc(0);
+                if (!Buffer.isBuffer(data))
+                    throw new TypeError("Result is not a buffer");
+                const type = (await fileTypeFromBuffer(data)) || {
+                    mime: "application/octet-stream",
+                    ext: ".bin",
+                };
+                if (data && saveToFile && !filename) {
+                    filename = path.join(__dirname, "../tmp/" + new Date() * 1 + "." + type.ext);
+                    await fs.promises.writeFile(filename, data);
+                }
+                return {
+                    res,
+                    filename,
+                    ...type,
+                    data,
+                    deleteFile() {
+                        return filename && fs.promises.unlink(filename);
                     },
-                    enumerable: true,
+                };
+            },
+            enumerable: true,
+        },
+        waitEvent: {
+            value(eventName, is = () => true, maxTries = 25) {
+                return new Promise((resolve, reject) => {
+                    let tries = 0;
+                    const on = (...args) => {
+                        if (++tries > maxTries) reject("Max tries reached");
+                        else if (is()) {
+                            conn.ev.off(eventName, on);
+                            resolve(...args);
+                        }
+                    };
+                    conn.ev.on(eventName, on);
+                });
+            },
+        },
+        relayWAMessage: {
+            async value(pesanfull) {
+                if (pesanfull.message?.audioMessage) {
+                    await conn.sendPresenceUpdate("recording", pesanfull.key.remoteJid);
+                } else {
+                    await conn.sendPresenceUpdate("composing", pesanfull.key.remoteJid);
+                }
+                const mekirim = await conn.relayMessage(
+                    pesanfull.key.remoteJid,
+                    pesanfull.message, { messageId: pesanfull.key.id },
+                );
+                conn.ev.emit("messages.upsert", {
+                    messages: [pesanfull],
+                    type: "append",
+                });
+                return mekirim;
+            },
+        },
+        sendFile: {
+            async value(jid, path, filename = "", caption = "", quoted, ptt = false, options = {}) {
+                const type = await conn.getFile(path, true);
+                let { res, data: file, filename: pathFile } = type;
+                if ((res && res.status !== 200) || file.length <= 65536) {
+                    try {
+                        throw { json: JSON.parse(file.toString()) };
+                    } catch (e) {
+                        if (e.json) throw e.json;
+                    }
+                }
+                const opt = {};
+                if (quoted) opt.quoted = quoted;
+                if (!type) options.asDocument = true;
+                let mtype = "";
+                let mimetype = options.mimetype || type.mime;
+                let convert;
+                if (/webp/.test(type.mime) || (/image/.test(type.mime) && options.asSticker))
+                    mtype = "sticker";
+                else if (/image/.test(type.mime) || (/webp/.test(type.mime) && options.asImage))
+                    mtype = "image";
+                else if (/video/.test(type.mime)) mtype = "video";
+                else if (/audio/.test(type.mime)) {
+                    convert = await toAudio(file, type.ext);
+                    file = convert.data;
+                    pathFile = convert.filename;
+                    mtype = "audio";
+                    mimetype = options.mimetype || "audio/mpeg; codecs=opus";
+                } else mtype = "document";
+                if (options.asDocument) mtype = "document";
+
+                delete options.asSticker;
+                delete options.asLocation;
+                delete options.asVideo;
+                delete options.asDocument;
+                delete options.asImage;
+
+                const message = {
+                    ...options,
+                    caption,
+                    ptt,
+                    [mtype]: { url: pathFile },
+                    mimetype,
+                    fileName: filename || pathFile.split("/").pop(),
+                };
+                let m;
+                try {
+                    m = await conn.sendMessage(jid, message, { ...opt, ...options });
+                } catch (e) {
+                    console.error(e);
+                    m = null;
+                } finally {
+                    if (!m)
+                        m = await conn.sendMessage(jid, { ...message, [mtype]: file }, { ...opt, ...options });
+                    file = null;
+                    return m;
+                }
+            },
+            enumerable: true,
+        },
+        sendContact: {
+            async value(jid, data, quoted, options) {
+                if (!Array.isArray(data[0]) && typeof data[0] === "string") data = [data];
+                const contacts = [];
+                for (let [number, name] of data) {
+                    number = number.replace(/[^0-9]/g, "");
+                    const njid = number + "@s.whatsapp.net";
+                    const biz = await conn.getBusinessProfile(njid).catch(() => ({}));
+                    const vcard = `
+BEGIN:VCARD
+VERSION:3.0
+N:;${name.replace(/\n/g, "\\n")};;;
+FN:${name.replace(/\n/g, "\\n")}
+TEL;type=CELL;type=VOICE;waid=${number}:${PhoneNumber("+" + number).getNumber("international")}${
+            biz?.description
+              ? `
+X-WA-BIZ-NAME:${(conn.chats[njid]?.vname || conn.getName(njid) || name).replace(/\n/, "\\n")}
+X-WA-BIZ-DESCRIPTION:${biz.description.replace(/\n/g, "\\n")}
+`.trim()
+              : ""
+          }
+END:VCARD
+        `.trim();
+                    contacts.push({ vcard, displayName: name });
+                }
+                return await conn.sendMessage(
+                    jid, {
+                        ...options,
+                        contacts: {
+                            ...options,
+                            displayName: (contacts.length >= 2 ? `${contacts.length} kontak` : contacts[0].displayName) || null,
+                            contacts,
+                        },
+                    }, { quoted, ...options },
+                );
+            },
+            enumerable: true,
+        },
+        reply: {
+            value(jid, text = "", quoted, options) {
+                return Buffer.isBuffer(text) ?
+                    conn.sendFile(jid, text, "file", "", quoted, false, options) :
+                    conn.sendMessage(jid, { ...options, text }, { quoted, ...options });
+            },
+        },
+        sendButtonMessages: {
+            async value(jid, messages, quoted, options) {
+                messages.length > 1 ?
+                    await conn.sendCarousel(jid, messages, quoted, options) :
+                    await conn.sendNCarousel(jid, ...messages[0], quoted, options);
+            },
+        },
+        sendNCarousel: {
+            async value(jid, text = "", footer = "", buffer, buttons, copy, urls, list, quoted, options) {
+                let img, video;
+                if (buffer) {
+                    if (/^https?:\/\//i.test(buffer)) {
+                        try {
+                            const response = await fetch(buffer);
+                            const contentType = response.headers.get("content-type");
+                            if (/^image\//i.test(contentType)) {
+                                img = await prepareWAMessageMedia({ image: { url: buffer } }, { upload: conn.waUploadToServer, ...options });
+                            } else if (/^video\//i.test(contentType)) {
+                                video = await prepareWAMessageMedia({ video: { url: buffer } }, { upload: conn.waUploadToServer, ...options });
+                            }
+                        } catch (error) {
+                            console.error("Failed to get MIME type:", error);
+                        }
+                    } else {
+                        try {
+                            const type = await conn.getFile(buffer);
+                            if (/^image\//i.test(type.mime)) {
+                                img = await prepareWAMessageMedia({ image: type?.data }, { upload: conn.waUploadToServer, ...options });
+                            } else if (/^video\//i.test(type.mime)) {
+                                video = await prepareWAMessageMedia({ video: type?.data }, { upload: conn.waUploadToServer, ...options });
+                            }
+                        } catch (error) {
+                            console.error("Failed to get file type:", error);
+                        }
+                    }
+                }
+                const dynamicButtons = buttons.map((btn) => ({
+                    name: "quick_reply",
+                    buttonParamsJson: JSON.stringify({ display_text: btn[0], id: btn[1] }),
+                }));
+                if (copy && (typeof copy === "string" || typeof copy === "number")) {
+                    dynamicButtons.push({
+                        name: "cta_copy",
+                        buttonParamsJson: JSON.stringify({ display_text: "Copy", copy_code: copy }),
+                    });
+                }
+                urls?.forEach((url) => {
+                    dynamicButtons.push({
+                        name: "cta_url",
+                        buttonParamsJson: JSON.stringify({ display_text: url[0], url: url[1], merchant_url: url[1] }),
+                    });
+                });
+                list?.forEach((lister) => {
+                    dynamicButtons.push({
+                        name: "single_select",
+                        buttonParamsJson: JSON.stringify({ title: lister[0], sections: lister[1] }),
+                    });
+                });
+                const interactiveMessage = {
+                    body: { text: text || "" },
+                    footer: { text: footer || global.wm },
+                    header: {
+                        hasMediaAttachment: !!(img?.imageMessage || video?.videoMessage),
+                        imageMessage: img?.imageMessage || null,
+                        videoMessage: video?.videoMessage || null,
+                    },
+                    nativeFlowMessage: {
+                        buttons: dynamicButtons.filter(Boolean),
+                        messageParamsJson: "",
+                    },
+                    ...Object.assign({
+                        mentions: typeof text === "string" ? conn.parseMention(text || "@0") : [],
+                        contextInfo: { mentionedJid: typeof text === "string" ? conn.parseMention(text || "@0") : [] },
+                    }, {
+                        ...(options || {}),
+                        ...(conn.temareply?.contextInfo && {
+                            contextInfo: {
+                                ...(options?.contextInfo || {}),
+                                ...conn.temareply?.contextInfo,
+                                externalAdReply: {
+                                    ...(options?.contextInfo?.externalAdReply || {}),
+                                    ...conn.temareply?.contextInfo?.externalAdReply,
+                                },
+                            },
+                        }),
+                    }),
+                };
+                const messageContent = proto.Message.fromObject({
+                    viewOnceMessage: {
+                        message: {
+                            messageContextInfo: { deviceListMetadata: {}, deviceListMetadataVersion: 2 },
+                            interactiveMessage,
+                        },
+                    },
+                });
+                const msgs = await generateWAMessageFromContent(jid, messageContent, {
+                    userJid: conn.user.jid,
+                    quoted: quoted,
+                    upload: conn.waUploadToServer,
+                    ephemeralExpiration: WA_DEFAULT_EPHEMERAL,
+                });
+                await conn.relayMessage(jid, msgs.message, { messageId: msgs.key.id });
+            },
+        },
+        sendCarousel: {
+            async value(jid, text = "", footer = "", text2 = "", messages, quoted, options) {
+                if (messages.length > 1) {
+                    const cards = await Promise.all(
+                        messages.map(async ([text = "", footer = "", buffer, buttons, copy, urls, list]) => {
+                            let img, video;
+                            if (/^https?:\/\//i.test(buffer)) {
+                                try {
+                                    const response = await fetch(buffer);
+                                    const contentType = response.headers.get("content-type");
+                                    if (/^image\//i.test(contentType)) {
+                                        img = await prepareWAMessageMedia({ image: { url: buffer } }, { upload: conn.waUploadToServer, ...options });
+                                    } else if (/^video\//i.test(contentType)) {
+                                        video = await prepareWAMessageMedia({ video: { url: buffer } }, { upload: conn.waUploadToServer, ...options });
+                                    }
+                                } catch (error) {
+                                    console.error("Failed to get MIME type:", error);
+                                }
+                            } else {
+                                try {
+                                    const type = await conn.getFile(buffer);
+                                    if (/^image\//i.test(type.mime)) {
+                                        img = await prepareWAMessageMedia({ image: type?.data }, { upload: conn.waUploadToServer, ...options });
+                                    } else if (/^video\//i.test(type.mime)) {
+                                        video = await prepareWAMessageMedia({ video: type?.data }, { upload: conn.waUploadToServer, ...options });
+                                    }
+                                } catch (error) {
+                                    console.error("Failed to get file type:", error);
+                                }
+                            }
+                            const dynamicButtons = buttons.map((btn) => ({
+                                name: "quick_reply",
+                                buttonParamsJson: JSON.stringify({ display_text: btn[0], id: btn[1] }),
+                            }));
+                            copy = Array.isArray(copy) ? copy : [copy];
+                            copy.forEach((cp) => {
+                                if(cp && cp[0]) {
+                                    dynamicButtons.push({
+                                        name: "cta_copy",
+                                        buttonParamsJson: JSON.stringify({ display_text: "Copy", copy_code: cp[0] }),
+                                    });
+                                }
+                            });
+                            urls?.forEach((url) => {
+                                dynamicButtons.push({
+                                    name: "cta_url",
+                                    buttonParamsJson: JSON.stringify({ display_text: url[0], url: url[1], merchant_url: url[1] }),
+                                });
+                            });
+                            list?.forEach((lister) => {
+                                dynamicButtons.push({
+                                    name: "single_select",
+                                    buttonParamsJson: JSON.stringify({ title: lister[0], sections: lister[1] }),
+                                });
+                            });
+
+                            return {
+                                body: proto.Message.InteractiveMessage.Body.fromObject({ text: text || "" }),
+                                footer: proto.Message.InteractiveMessage.Footer.fromObject({ text: footer || global.wm }),
+                                header: proto.Message.InteractiveMessage.Header.fromObject({
+                                    title: text2,
+                                    subtitle: text || "",
+                                    hasMediaAttachment: !!(img?.imageMessage || video?.videoMessage),
+                                    imageMessage: img?.imageMessage || null,
+                                    videoMessage: video?.videoMessage || null,
+                                }),
+                                nativeFlowMessage: proto.Message.InteractiveMessage.NativeFlowMessage.fromObject({
+                                    buttons: dynamicButtons.filter(Boolean),
+                                    messageParamsJson: "",
+                                }),
+                                ...Object.assign({
+                                    mentions: typeof text === "string" ? conn.parseMention(text || "@0") : [],
+                                    contextInfo: { mentionedJid: typeof text === "string" ? conn.parseMention(text || "@0") : [] },
+                                }, {
+                                    ...(options || {}),
+                                    ...(conn.temareply?.contextInfo && {
+                                        contextInfo: {
+                                            ...(options?.contextInfo || {}),
+                                            ...conn.temareply?.contextInfo,
+                                            externalAdReply: {
+                                                ...(options?.contextInfo?.externalAdReply || {}),
+                                                ...conn.temareply?.contextInfo?.externalAdReply,
+                                            },
+                                        },
+                                    }),
+                                }),
+                            };
+                        })
+                    );
+                    const interactiveMessage = proto.Message.InteractiveMessage.create({
+                        body: proto.Message.InteractiveMessage.Body.fromObject({ text: text || "" }),
+                        footer: proto.Message.InteractiveMessage.Footer.fromObject({ text: footer || global.wm }),
+                        header: proto.Message.InteractiveMessage.Header.fromObject({ title: text || "", subtitle: text || "", hasMediaAttachment: false }),
+                        carouselMessage: proto.Message.InteractiveMessage.CarouselMessage.fromObject({ cards }),
+                        ...Object.assign({
+                            mentions: typeof text === "string" ? conn.parseMention(text || "@0") : [],
+                            contextInfo: { mentionedJid: typeof text === "string" ? conn.parseMention(text || "@0") : [] },
+                        }, {
+                            ...(options || {}),
+                            ...(conn.temareply?.contextInfo && {
+                                contextInfo: {
+                                    ...(options?.contextInfo || {}),
+                                    ...conn.temareply?.contextInfo,
+                                    externalAdReply: {
+                                        ...(options?.contextInfo?.externalAdReply || {}),
+                                        ...conn.temareply?.contextInfo?.externalAdReply,
+                                    },
+                                },
+                            }),
+                        }),
+                    });
+                    const messageContent = proto.Message.fromObject({
+                        viewOnceMessage: {
+                            message: {
+                                messageContextInfo: { deviceListMetadata: {}, deviceListMetadataVersion: 2 },
+                                interactiveMessage,
+                            },
+                        },
+                    });
+                    const msgs = await generateWAMessageFromContent(jid, messageContent, {
+                        userJid: conn.user.jid,
+                        quoted: quoted,
+                        upload: conn.waUploadToServer,
+                        ephemeralExpiration: WA_DEFAULT_EPHEMERAL,
+                    });
+                    await conn.relayMessage(jid, msgs.message, { messageId: msgs.key.id });
+                } else {
+                    await conn.sendNCarousel(jid, ...messages[0], quoted, options);
+                }
+            },
+        },
+        sendButton: {
+            async value(jid, text = "", footer = "", buffer, buttons, copy, urls, quoted, options) {
+                let img, video;
+                if (/^https?:\/\//i.test(buffer)) {
+                    try {
+                        const response = await fetch(buffer);
+                        const contentType = response.headers.get("content-type");
+                        if (/^image\//i.test(contentType)) {
+                            img = await prepareWAMessageMedia({ image: { url: buffer } }, { upload: conn.waUploadToServer });
+                        } else if (/^video\//i.test(contentType)) {
+                            video = await prepareWAMessageMedia({ video: { url: buffer } }, { upload: conn.waUploadToServer });
+                        }
+                    } catch (error) {
+                        console.error("Error al obtener el tipo MIME:", error);
+                    }
+                } else if (buffer) {
+                    try {
+                        const type = await conn.getFile(buffer);
+                        if (/^image\//i.test(type.mime)) {
+                            img = await prepareWAMessageMedia({ image: { url: buffer } }, { upload: conn.waUploadToServer });
+                        } else if (/^video\//i.test(type.mime)) {
+                            video = await prepareWAMessageMedia({ video: { url: buffer } }, { upload: conn.waUploadToServer });
+                        }
+                    } catch (error) {
+                        console.error("Error al obtener el tipo de archivo:", error);
+                    }
+                }
+
+                const dynamicButtons = buttons.map((btn) => ({
+                    name: "quick_reply",
+                    buttonParamsJson: JSON.stringify({ display_text: btn[0], id: btn[1] }),
+                }));
+
+                if (copy && (typeof copy === "string" || typeof copy === "number")) {
+                    dynamicButtons.push({
+                        name: "cta_copy",
+                        buttonParamsJson: JSON.stringify({ display_text: "Copy", copy_code: copy }),
+                    });
+                }
+
+                if (urls && Array.isArray(urls)) {
+                    urls.forEach((url) => {
+                        dynamicButtons.push({
+                            name: "cta_url",
+                            buttonParamsJson: JSON.stringify({ display_text: url[0], url: url[1], merchant_url: url[1] }),
+                        });
+                    });
+                }
+
+                const interactiveMessage = {
+                    body: { text: text },
+                    footer: { text: footer },
+                    header: {
+                        hasMediaAttachment: false,
+                        imageMessage: img ? img.imageMessage : null,
+                        videoMessage: video ? video.videoMessage : null,
+                    },
+                    nativeFlowMessage: {
+                        buttons: dynamicButtons,
+                        messageParamsJson: "",
+                    },
+                };
+
+                let msgL = generateWAMessageFromContent(
+                    jid, {
+                        viewOnceMessage: {
+                            message: { interactiveMessage },
+                        },
+                    }, { userJid: conn.user.jid, quoted },
+                );
+
+                conn.relayMessage(jid, msgL.message, { messageId: msgL.key.id, ...options });
+            },
+        },
+        sendList: {
+            async value(jid, title, text, buttonText, listSections, quoted, options = {}) {
+                const sections = [...listSections];
+                const message = {
+                    interactiveMessage: {
+                        header: { title: title },
+                        body: { text: text },
+                        nativeFlowMessage: {
+                            buttons: [{
+                                name: "single_select",
+                                buttonParamsJson: JSON.stringify({ title: buttonText, sections }),
+                            }],
+                            messageParamsJson: "",
+                        },
+                    },
+                };
+                await conn.relayMessage(jid, { viewOnceMessage: { message } }, {});
+            },
+        },
+        sendEvent: {
+            async value(jid, text, des, loc, link) {
+                let msg = generateWAMessageFromContent(
+                    jid, {
+                        messageContextInfo: { messageSecret: crypto.randomBytes(32) },
+                        eventMessage: {
+                            isCanceled: false,
+                            name: text,
+                            description: des,
+                            location: { degreesLatitude: 0, degreesLongitude: 0, name: loc },
+                            joinLink: link,
+                            startTime: "m.messageTimestamp",
+                        },
+                    }, {},
+                );
+                conn.relayMessage(jid, msg.message, { messageId: msg.key.id });
+            },
+            enumerable: true,
+        },
+        sendPoll: {
+            async value(jid, name = "", optiPoll, options = {}) {
+                if (!Array.isArray(optiPoll[0]) && typeof optiPoll[0] === "string") optiPoll = [optiPoll];
+                const pollMessage = {
+                    name: name,
+                    options: optiPoll.map((btn) => ({ optionName: btn[0] ?? "" })),
+                    selectableOptionsCount: 1,
+                };
+                return conn.relayMessage(jid, { pollCreationMessage: pollMessage }, { ...options });
+            },
+        },
+        sendHydrated: {
+            async value(jid, text = "", footer = "", buffer, url, urlText, call, callText, buttons, quoted, options = {}) {
+                let type;
+                if (buffer) {
+                    try {
+                        type = await conn.getFile(buffer);
+                        buffer = type.data;
+                    } catch {
+                        buffer = buffer;
+                    }
+                }
+                if (buffer && !Buffer.isBuffer(buffer) && (typeof buffer === "string" || Array.isArray(buffer))) {
+                    options = quoted; quoted = buttons; buttons = callText; callText = call; call = urlText; urlText = url; url = buffer; buffer = null;
+                }
+                const templateButtons = [];
+                if (url || urlText) {
+                    if (!Array.isArray(url)) url = [url];
+                    if (!Array.isArray(urlText)) urlText = [urlText];
+                    templateButtons.push(
+                        ...(url.map((v, i) => [v, urlText[i]]).map(([url, urlText], i) => ({
+                                index: templateButtons.length + i + 1,
+                                urlButton: { displayText: urlText ?? url ?? "", url: url ?? urlText ?? "" },
+                            })) || []),
+                    );
+                }
+                if (call || callText) {
+                    if (!Array.isArray(call)) call = [call];
+                    if (!Array.isArray(callText)) callText = [callText];
+                    templateButtons.push(
+                        ...(call.map((v, i) => [v, callText[i]]).map(([call, callText], i) => ({
+                                index: templateButtons.length + i + 1,
+                                callButton: { displayText: callText ?? call ?? "", phoneNumber: call ?? callText ?? "" },
+                            })) || []),
+                    );
+                }
+                if (buttons?.length) {
+                    if (!Array.isArray(buttons[0])) buttons = [buttons];
+                    templateButtons.push(
+                        ...(buttons.map(([text, id], index) => ({
+                            index: templateButtons.length + index + 1,
+                            quickReplyButton: { displayText: text ?? id ?? "", id: id ?? text ?? "" },
+                        })) || []),
+                    );
+                }
+                const message = {
+                    ...options,
+                    [buffer ? "caption" : "text"]: text || "",
+                    footer,
+                    templateButtons,
+                    ...(buffer ? options.asLocation && /image/.test(type.mime) ? {
+                            location: { ...options, jpegThumbnail: buffer },
+                        } : {
+                            [/video/.test(type.mime) ? "video" : /image/.test(type.mime) ? "image" : "document"]: buffer,
+                        } : {}),
+                };
+                return await conn.sendMessage(jid, message, { quoted, upload: conn.waUploadToServer, ...options });
+            },
+            enumerable: true,
+        },
+        sendHydrated2: {
+            async value(jid, text = "", footer = "", buffer, url, urlText, url2, urlText2, buttons, quoted, options = {}) {
+                let type;
+                if (buffer) {
+                    try {
+                        type = await conn.getFile(buffer);
+                        buffer = type.data;
+                    } catch {
+                        buffer = buffer;
+                    }
+                }
+                if (buffer && !Buffer.isBuffer(buffer) && (typeof buffer === "string" || Array.isArray(buffer))) {
+                    options = quoted; quoted = buttons; buttons = urlText2; urlText2 = url2; url2 = urlText; urlText = url; url = buffer; buffer = null;
+                }
+                const templateButtons = [];
+                if (url || urlText) {
+                    if (!Array.isArray(url)) url = [url];
+                    if (!Array.isArray(urlText)) urlText = [urlText];
+                    templateButtons.push(
+                        ...(url.map((v, i) => [v, urlText[i]]).map(([url, urlText], i) => ({
+                                index: templateButtons.length + i + 1,
+                                urlButton: { displayText: urlText ?? url ?? "", url: url ?? urlText ?? "" },
+                            })) || []),
+                    );
+                }
+                if (url2 || urlText2) {
+                    if (!Array.isArray(url2)) url2 = [url2];
+                    if (!Array.isArray(urlText2)) urlText2 = [urlText2];
+                    templateButtons.push(
+                        ...(url2.map((v, i) => [v, urlText2[i]]).map(([url2, urlText2], i) => ({
+                                index: templateButtons.length + i + 1,
+                                urlButton: { displayText: urlText2 ?? url2 ?? "", url: url2 ?? urlText2 ?? "" },
+                            })) || []),
+                    );
+                }
+                if (buttons?.length) {
+                    if (!Array.isArray(buttons[0])) buttons = [buttons];
+                    templateButtons.push(
+                        ...(buttons.map(([text, id], index) => ({
+                            index: templateButtons.length + index + 1,
+                            quickReplyButton: { displayText: text ?? id ?? "", id: id ?? text ?? "" },
+                        })) || []),
+                    );
+                }
+                const message = {
+                    ...options,
+                    [buffer ? "caption" : "text"]: text || "",
+                    footer,
+                    templateButtons,
+                    ...(buffer ? options.asLocation && /image/.test(type.mime) ? {
+                            location: { ...options, jpegThumbnail: buffer },
+                        } : {
+                            [/video/.test(type.mime) ? "video" : /image/.test(type.mime) ? "image" : "document"]: buffer,
+                        } : {}),
+                };
+                return await conn.sendMessage(jid, message, { quoted, upload: conn.waUploadToServer, ...options });
+            },
+            enumerable: true,
+        },
+        cMod: {
+            value(jid, message, text = "", sender = conn.user.jid, options = {}) {
+                if (options.mentions && !Array.isArray(options.mentions)) options.mentions = [options.mentions];
+                const copy = message.toJSON();
+                delete copy.message.messageContextInfo;
+                delete copy.message.senderKeyDistributionMessage;
+                const mtype = Object.keys(copy.message)[0];
+                const msg = copy.message;
+                const content = msg[mtype];
+                if (typeof content === "string") msg[mtype] = text || content;
+                else if (content.caption) content.caption = text || content.caption;
+                else if (content.text) content.text = text || content.text;
+                if (typeof content !== "string") {
+                    msg[mtype] = { ...content, ...options };
+                    msg[mtype].contextInfo = {
+                        ...(content.contextInfo || {}),
+                        mentionedJid: options.mentions || content.contextInfo?.mentionedJid || [],
+                    };
+                }
+                if (copy.participant) sender = copy.participant = sender || copy.participant;
+                else if (copy.key.participant) sender = copy.key.participant = sender || copy.key.participant;
+                if (copy.key.remoteJid.includes("@s.whatsapp.net")) sender = sender || copy.key.remoteJid;
+                else if (copy.key.remoteJid.includes("@broadcast")) sender = sender || copy.key.remoteJid;
+                copy.key.remoteJid = jid;
+                copy.key.fromMe = areJidsSameUser(sender, conn.user.id) || false;
+                return proto.WebMessageInfo.fromObject(copy);
+            },
+            enumerable: true,
+        },
+        copyNForward: {
+            async value(jid, message, forwardingScore = true, options = {}) {
+                let vtype;
+                if (options.readViewOnce && message.message?.viewOnceMessage?.message) {
+                    vtype = Object.keys(message.message.viewOnceMessage.message)[0];
+                    delete message.message.viewOnceMessage.message[vtype].viewOnce;
+                    message.message = proto.Message.fromObject(JSON.parse(JSON.stringify(message.message.viewOnceMessage.message)));
+                    message.message[vtype].contextInfo = message.message.viewOnceMessage.contextInfo;
+                }
+                const mtype = Object.keys(message.message)[0];
+                let m = generateForwardMessageContent(message, !!forwardingScore);
+                const ctype = Object.keys(m)[0];
+                if (forwardingScore && typeof forwardingScore === "number" && forwardingScore > 1) {
+                    m[ctype].contextInfo.forwardingScore += forwardingScore;
+                }
+                m[ctype].contextInfo = {
+                    ...(message.message[mtype]?.contextInfo || {}),
+                    ...(m[ctype].contextInfo || {}),
+                };
+                m = generateWAMessageFromContent(jid, m, { ...options, userJid: conn.user.jid });
+                await conn.relayMessage(jid, m.message, { messageId: m.key.id, additionalAttributes: { ...options } });
+                return m;
+            },
+            enumerable: true,
+        },
+        fakeReply: {
+            value(jid, text = "", fakeJid = this.user.jid, fakeText = "", fakeGroupJid, options) {
+                return conn.reply(jid, text, {
+                    key: {
+                        fromMe: areJidsSameUser(fakeJid, conn.user.id),
+                        participant: fakeJid,
+                        ...(fakeGroupJid ? { remoteJid: fakeGroupJid } : {}),
+                    },
+                    message: { conversation: fakeText },
+                    ...options,
+                });
+            },
+        },
+        downloadM: {
+            async value(m, type, saveToFile) {
+                let filename;
+                if (!m || !(m.url || m.directPath)) return Buffer.alloc(0);
+                const stream = await downloadContentFromMessage(m, type);
+                let buffer = Buffer.from([]);
+                for await (const chunk of stream) {
+                    buffer = Buffer.concat([buffer, chunk]);
+                }
+                if (saveToFile) {
+                    let fileRes = await conn.getFile(buffer, true);
+                    filename = fileRes.filename;
+                }
+                return saveToFile && fs.existsSync(filename) ? filename : buffer;
+            },
+            enumerable: true,
+        },
+        parseMention: {
+            value(text = "") {
+                try {
+                    const esNumeroValido = (numero) => {
+                        const len = numero.length;
+                        if (len < 8 || len > 13) return false;
+                        if (len > 10 && numero.startsWith("9")) return false;
+                        const codigosValidos = ["1","7","20","27","30","31","32","33","34","36","39","40","41","43","44","45","46","47","48","49","51","52","53","54","55","56","57","58","60","61","62","63","64","65","66","81","82","84","86","90","91","92","93","94","95","98","211","212","213","216","218","220","221","222","223","224","225","226","227","228","229","230","231","232","233","234","235","236","237","238","239","240","241","242","243","244","245","246","248","249","250","251","252","253","254","255","256","257","258","260","261","262","263","264","265","266","267","268","269","290","291","297","298","299","350","351","352","353","354","355","356","357","358","359","370","371","372","373","374","375","376","377","378","379","380","381","382","383","385","386","387","389","420","421","423","500","501","502","503","504","505","506","507","508","509","590","591","592","593","594","595","596","597","598","599","670","672","673","674","675","676","677","678","679","680","681","682","683","685","686","687","688","689","690","691","692","850","852","853","855","856","880","886","960","961","962","963","964","965","966","967","968","970","971","972","973","974","975","976","977","978","979","992","993","994","995","996","998"];
+                        return codigosValidos.some((codigo) => numero.startsWith(codigo));
+                    };
+                    return (text.match(/@(\d{5,20})/g) || []).map((m) => m.substring(1)).map((numero) => esNumeroValido(numero) ? `${numero}@s.whatsapp.net` : `${numero}@lid`);
+                } catch (error) {
+                    console.error("Error:", error);
+                    return [];
+                }
+            },
+            enumerable: true,
+        },
+        getName: {
+            value(jid = "", withoutContact = false) {
+                try {
+                    if (!jid || typeof jid !== "string" || jid.includes("No SenderKeyRecord")) return "";
+                    jid = conn.decodeJid(jid);
+                    withoutContact = conn.withoutContact || withoutContact;
+                    let v;
+                    if (jid.endsWith("@g.us")) {
+                        return new Promise(async (resolve) => {
+                            try {
+                                v = conn.chats[jid] || {};
+                                if (!(v.name || v.subject)) v = await conn?.groupMetadata(jid).catch(() => ({}));
+                                resolve(v.name || v.subject || PhoneNumber("+" + jid.replace("@s.whatsapp.net", "")).getNumber("international"));
+                            } catch (e) { resolve(""); }
+                        });
+                    } else {
+                        v = jid === "0@s.whatsapp.net" ? { jid, vname: "WhatsApp" } : areJidsSameUser(jid, conn.user.id) ? conn.user : conn.chats[jid] || {};
+                        return (withoutContact ? "" : v.name) || v.subject || v.vname || v.notify || v.verifiedName || PhoneNumber("+" + jid.replace("@s.whatsapp.net", "")).getNumber("international");
+                    }
+                } catch (error) { return ""; }
+            },
+        },
+        loadMessage: {
+            value(messageID) {
+                return Object.entries(conn.chats)
+                    .filter(([_, { messages }]) => typeof messages === "object")
+                    .find(([_, { messages }]) => Object.entries(messages).find(([k, v]) => k === messageID || v.key?.id === messageID))?.[1].messages?.[messageID];
+            },
+            enumerable: true,
+        },
+        sendGroupV4Invite: {
+            async value(jid, participant, inviteCode, inviteExpiration, groupName = "unknown subject", caption = "Invitation to join my WhatsApp group", jpegThumbnail, options = {}) {
+                const msg = proto.Message.fromObject({
+                    groupInviteMessage: proto.GroupInviteMessage.fromObject({
+                        inviteCode,
+                        inviteExpiration: parseInt(inviteExpiration) || +new Date(new Date() + 3 * 86400000),
+                        groupJid: jid,
+                        groupName: groupName ? groupName : await conn.getName(jid) || null,
+                        jpegThumbnail: Buffer.isBuffer(jpegThumbnail) ? jpegThumbnail : null,
+                        caption,
+                    }),
+                });
+                const message = generateWAMessageFromContent(participant, msg, options);
+                await conn.relayMessage(participant, message.message, { messageId: message.key.id, additionalAttributes: { ...options } });
+                return message;
+            },
+            enumerable: true,
+        },
+        processMessageStubType: {
+            async value(m) {
+                if (!m.messageStubType) return;
+                const chat = conn.decodeJid(m.key.remoteJid || m.message?.senderKeyDistributionMessage?.groupId || "");
+                if (!chat || chat === "status@broadcast") return;
+                const emitGroupUpdate = (update) => {
+                    conn.ev.emit("groups.update", [{ id: chat, ...update }]);
+                };
+                switch (m.messageStubType) {
+                    case WAMessageStubType.REVOKE:
+                    case WAMessageStubType.GROUP_CHANGE_INVITE_LINK:
+                        emitGroupUpdate({ revoke: m.messageStubParameters[0] });
+                        break;
+                    case WAMessageStubType.GROUP_CHANGE_ICON:
+                        emitGroupUpdate({ icon: m.messageStubParameters[0] });
+                        break;
+                    default: {
+                        console.log({
+                            messageStubType: m.messageStubType,
+                            messageStubParameters: m.messageStubParameters,
+                            type: WAMessageStubType[m.messageStubType],
+                        });
+                        break;
+                    }
+                }
+                const isGroup = chat.endsWith("@g.us");
+                if (!isGroup) return;
+                let chats = conn.chats[chat];
+                if (!chats) chats = conn.chats[chat] = { id: chat };
+                chats.isChats = true;
+                const metadata = await conn.groupMetadata(chat).catch(() => null);
+                if (!metadata) return;
+                chats.subject = metadata.subject;
+                chats.metadata = metadata;
+            },
+        },
+        insertAllGroup: {
+            async value() {
+                const groups = await conn.groupFetchAllParticipating().catch(() => ({}));
+                for (const group in groups) {
+                    conn.chats[group] = {
+                        ...(conn.chats[group] || {}),
+                        id: group,
+                        subject: groups[group].subject,
+                        isChats: true,
+                        metadata: groups[group],
+                    };
+                }
+                return conn.chats;
+            },
+        },
+        pushMessage: {
+            async value(m) {
+                if (!m) return;
+                if (!Array.isArray(m)) m = [m];
+                for (const message of m) {
+                    try {
+                        if (!message) continue;
+                        if (message.messageStubType && message.messageStubType != WAMessageStubType.CIPHERTEXT)
+                            conn.processMessageStubType(message).catch(console.error);
+                        const _mtype = Object.keys(message.message || {});
+                        const mtype = (!["senderKeyDistributionMessage", "messageContextInfo"].includes(_mtype[0]) && _mtype[0]) || (_mtype.length >= 3 && _mtype[1] !== "messageContextInfo" && _mtype[1]) || _mtype[_mtype.length - 1];
+                        const chat = conn.decodeJid(message.key.remoteJid || message.message?.senderKeyDistributionMessage?.groupId || "");
+                        if (message.message?.[mtype]?.contextInfo?.quotedMessage) {
+                            const context = message.message[mtype].contextInfo;
+                            let participant = conn.decodeJid(context.participant);
+                            const remoteJid = conn.decodeJid(context.remoteJid || participant);
+                            const quoted = message.message[mtype].contextInfo.quotedMessage;
+                            if (remoteJid && remoteJid !== "status@broadcast" && quoted) {
+                                let qMtype = Object.keys(quoted)[0];
+                                if (qMtype == "conversation") {
+                                    quoted.extendedTextMessage = { text: quoted[qMtype] };
+                                    delete quoted.conversation;
+                                    qMtype = "extendedTextMessage";
+                                }
+                                if (!quoted[qMtype].contextInfo) quoted[qMtype].contextInfo = {};
+                                quoted[qMtype].contextInfo.mentionedJid = context.mentionedJid || quoted[qMtype].contextInfo.mentionedJid || [];
+                                const isGroup = remoteJid.endsWith("g.us");
+                                if (isGroup && !participant) participant = remoteJid;
+                                const qM = {
+                                    key: { remoteJid, fromMe: areJidsSameUser(conn.user.jid, remoteJid), id: context.stanzaId, participant },
+                                    message: JSON.parse(JSON.stringify(quoted)),
+                                    ...(isGroup ? { participant } : {}),
+                                };
+                                let qChats = conn.chats[participant];
+                                if (!qChats) qChats = conn.chats[participant] = { id: participant, isChats: !isGroup };
+                                if (!qChats.messages) qChats.messages = {};
+                                if (!qChats.messages[context.stanzaId] && !qM.key.fromMe) qChats.messages[context.stanzaId] = qM;
+                                let qChatsMessages;
+                                if ((qChatsMessages = Object.entries(qChats.messages)).length > 40)
+                                    qChats.messages = Object.fromEntries(qChatsMessages.slice(30, qChatsMessages.length));
+                            }
+                        }
+                        if (!chat || chat === "status@broadcast") continue;
+                        const isGroup = chat.endsWith("@g.us");
+                        let chats = conn.chats[chat];
+                        if (!chats) {
+                            if (isGroup) await conn.insertAllGroup().catch(console.error);
+                            chats = conn.chats[chat] = { id: chat, isChats: true, ...(conn.chats[chat] || {}) };
+                        }
+                        let metadata;
+                        let sender;
+                        if (isGroup) {
+                            if (!chats.subject || !chats.metadata) {
+                                metadata = await conn.groupMetadata(chat).catch(() => ({}));
+                                if (!chats.subject) chats.subject = metadata.subject || "";
+                                if (!chats.metadata) chats.metadata = metadata;
+                            }
+                            sender = conn.decodeJid((message.key?.fromMe && conn.user.id) || message.participant || message.key?.participant || chat || "");
+                            if (sender !== chat) {
+                                let chatsSender = conn.chats[sender];
+                                if (!chatsSender) chatsSender = conn.chats[sender] = { id: sender };
+                                if (!chatsSender.name) chatsSender.name = message.pushName || chatsSender.name || "";
+                            }
+                        } else if (!chats.name) {
+                            chats.name = message.pushName || chats.name || "";
+                        }
+                        if (["senderKeyDistributionMessage", "messageContextInfo"].includes(mtype)) continue;
+                        chats.isChats = true;
+                        if (!chats.messages) chats.messages = {};
+                        const fromMe = message.key.fromMe || areJidsSameUser(sender || chat, conn.user.id);
+                        if (!["protocolMessage"].includes(mtype) && !fromMe && message.messageStubType != WAMessageStubType.CIPHERTEXT && message.message) {
+                            delete message.message.messageContextInfo;
+                            delete message.message.senderKeyDistributionMessage;
+                            chats.messages[message.key.id] = JSON.parse(JSON.stringify(message, null, 2));
+                            let chatsMessages;
+                            if ((chatsMessages = Object.entries(chats.messages)).length > 40)
+                                chats.messages = Object.fromEntries(chatsMessages.slice(30, chatsMessages.length));
+                        }
+                    } catch (e) { console.error(e); }
+                }
+            },
+        },
+        serializeM: {
+            value(m) { return smsg(conn, m); },
+        },
+        ...({
+            chatRead: {
+                value(jid, participant = conn.user.jid, messageID) {
+                    return conn.sendReadReceipt(jid, participant, [messageID]);
                 },
-            } :
-            {}),
+                enumerable: true,
+            },
+        }),
+        ...({
+            setStatus: {
+                value(status) {
+                    return conn.query({
+                        tag: "iq",
+                        attrs: { to: "s.whatsapp.net", type: "set", xmlns: "status" },
+                        content: [{ tag: "status", attrs: {}, content: Buffer.from(status, "utf-8") }],
+                    });
+                },
+                enumerable: true,
+            },
+        }),
     });
     if (sock.user?.id) sock.user.jid = sock.decodeJid(sock.user.id);
     store.bind(sock);
     return sock;
 }
 
-/**
- * Serialize Message
- * @param {ReturnType<typeof makeWASocket>} conn
- * @param {import("@whiskeysockets/baileys").proto.WebMessageInfo} m
- * @param {Boolean} hasParent
- */
 export function smsg(conn, m, hasParent) {
     if (!m) return m;
-    const M = WAProto.WebMessageInfo;
+    const M = proto.WebMessageInfo;
     try {
         m = M.fromObject(m);
         m.conn = conn;
@@ -211,136 +1128,75 @@ export function smsg(conn, m, hasParent) {
                 if (protocolMessageKey.remoteJid === "status@broadcast") {
                     protocolMessageKey.remoteJid = m.chat || "";
                 }
-                if (
-                    !protocolMessageKey.participant ||
-                    protocolMessageKey.participant === "status_me"
-                ) {
-                    protocolMessageKey.participant =
-                        typeof m.sender === "string" ? m.sender : "";
+                if (!protocolMessageKey.participant || protocolMessageKey.participant === "status_me") {
+                    protocolMessageKey.participant = typeof m.sender === "string" ? m.sender : "";
                 }
-                const decodedParticipant =
-                    conn?.decodeJid?.(protocolMessageKey.participant) || "";
-                protocolMessageKey.fromMe =
-                    decodedParticipant === (conn?.user?.id || "");
-                if (
-                    !protocolMessageKey.fromMe &&
-                    protocolMessageKey.remoteJid === (conn?.user?.id || "")
-                ) {
-                    protocolMessageKey.remoteJid =
-                        typeof m.sender === "string" ? m.sender : "";
+                const decodedParticipant = conn?.decodeJid?.(protocolMessageKey.participant) || "";
+                protocolMessageKey.fromMe = decodedParticipant === (conn?.user?.id || "");
+                if (!protocolMessageKey.fromMe && protocolMessageKey.remoteJid === (conn?.user?.id || "")) {
+                    protocolMessageKey.remoteJid = typeof m.sender === "string" ? m.sender : "";
                 }
             }
-            if (m.quoted && !m.quoted.mediaMessage) {
-                delete m.quoted.download;
-            }
+            if (m.quoted && !m.quoted.mediaMessage) delete m.quoted.download;
         }
-        if (!m.mediaMessage) {
-            delete m.download;
-        }
+        if (!m.mediaMessage) delete m.download;
         if (protocolMessageKey && m.mtype == "protocolMessage") {
-            try {
-                conn.ev.emit("message.delete", protocolMessageKey);
-            } catch (e) {
-                console.error("Error al emitir message.delete:", e);
-            }
+            try { conn.ev.emit("message.delete", protocolMessageKey); } catch (e) { console.error("Error al emitir message.delete:", e); }
         }
         return m;
-    } catch (e) {
-        console.error("Error en smsg:", e);
-        return m;
-    }
+    } catch (e) { console.error("Error en smsg:", e); return m; }
 }
 
-// تعديل الدالة لتعمل مع الـ Prototype الخاص بـ WAProto الجديد
 export function serialize() {
     const MediaType = ["imageMessage", "videoMessage", "audioMessage", "stickerMessage", "documentMessage"];
-    const safeEndsWith = (str, suffix) =>
-        typeof str === "string" && str.endsWith(suffix);
+    const safeEndsWith = (str, suffix) => typeof str === "string" && str.endsWith(suffix);
     const safeDecodeJid = (jid, conn) => {
         try {
             if (!jid || typeof jid !== "string") return "";
             return conn?.decodeJid?.(jid) || jid;
-        } catch (e) {
-            console.error("Error en safeDecodeJid:", e);
-            return "";
-        }
+        } catch (e) { console.error("Error en safeDecodeJid:", e); return ""; }
     };
 
-    return Object.defineProperties(WAProto.WebMessageInfo.prototype, {
-        conn: {
-            value: undefined,
-            enumerable: false,
-            writable: true,
-        },
+    return Object.defineProperties(proto.WebMessageInfo.prototype, {
+        conn: { value: undefined, enumerable: false, writable: true },
         id: {
-            get() {
-                try {
-                    return this.key?.id || "";
-                } catch (e) {
-                    return "";
-                }
-            },
+            get() { try { return this.key?.id || ""; } catch (e) { return ""; } },
             enumerable: true,
         },
         isBaileys: {
             get() {
                 try {
-                    const userId = this.conn?.user?.id || "";
-                    const sender = this.sender || "";
                     const messageId = this.id || "";
                     const baileysStarts = ['NJX-', 'Lyru-', 'META-', 'EvoGlobalBot-', 'FizzxyTheGreat-', 'BAE5', '3EB0', 'B24E', '8SCO', 'SUKI', 'MYSTIC-'];
-                    const hasKnownPrefix = baileysStarts.some(prefix => messageId.startsWith(prefix));
-                    const isSukiPattern = /^SUKI[A-F0-9]+$/.test(messageId);
-                    const isMysticPattern = /^MYSTIC[A-F0-9]+$/.test(messageId);
-                    return isMysticPattern || isSukiPattern || hasKnownPrefix || false;
-                } catch (e) {
-                    return false;
-                }
+                    return baileysStarts.some(prefix => messageId.startsWith(prefix)) || /^SUKI[A-F0-9]+$/.test(messageId) || /^MYSTIC[A-F0-9]+$/.test(messageId);
+                } catch (e) { return false; }
             },
             enumerable: true,
         },
         chat: {
             get() {
                 try {
-                    const senderKeyDistributionMessage =
-                        this.message?.senderKeyDistributionMessage?.groupId;
-                    const rawJid =
-                        this.key?.remoteJid ||
-                        (senderKeyDistributionMessage &&
-                            senderKeyDistributionMessage !== "status@broadcast") ||
-                        "";
+                    const senderKeyDistributionMessage = this.message?.senderKeyDistributionMessage?.groupId;
+                    const rawJid = this.key?.remoteJid || (senderKeyDistributionMessage && senderKeyDistributionMessage !== "status@broadcast") || "";
                     return safeDecodeJid(rawJid, this.conn);
-                } catch (e) {
-                    return "";
-                }
+                } catch (e) { return ""; }
             },
             enumerable: true,
         },
         isGroup: {
-            get() {
-                try {
-                    return safeEndsWith(this.chat, "@g.us");
-                } catch (e) {
-                    return false;
-                }
-            },
+            get() { try { return safeEndsWith(this.chat, "@g.us"); } catch (e) { return false; } },
             enumerable: true,
         },
         sender: {
-            get() {
-                return this.conn?.decodeJid(this.key?.fromMe && this.conn?.user.id || this.participant || this.key.participant || this.chat || '');
-            },
+            get() { return this.conn?.decodeJid(this.key?.fromMe && this.conn?.user.id || this.participant || this.key.participant || this.chat || ''); },
             enumerable: true,
         },
         fromMe: {
             get() {
                 try {
                     const userId = this.conn?.user?.jid || "";
-                    const sender = this.sender || "";
-                    return this.key?.fromMe || areJidsSameUser(userId, sender) || false;
-                } catch (e) {
-                    return false;
-                }
+                    return this.key?.fromMe || areJidsSameUser(userId, this.sender || "") || false;
+                } catch (e) { return false; }
             },
             enumerable: true,
         },
@@ -352,21 +1208,12 @@ export function serialize() {
                     if (!["senderKeyDistributionMessage", "messageContextInfo"].includes(type[0])) return type[0];
                     if (type.length >= 3 && type[1] !== "messageContextInfo") return type[1];
                     return type[type.length - 1];
-                } catch (e) {
-                    return "";
-                }
+                } catch (e) { return ""; }
             },
             enumerable: true,
         },
         msg: {
-            get() {
-                try {
-                    if (!this.message) return null;
-                    return this.message[this.mtype] || null;
-                } catch (e) {
-                    return null;
-                }
-            },
+            get() { try { return this.message ? this.message[this.mtype] || null : null; } catch (e) { return null; } },
             enumerable: true,
         },
         mediaMessage: {
@@ -377,78 +1224,40 @@ export function serialize() {
                     if (!Message) return null;
                     const mtype = Object.keys(Message)[0];
                     return MediaType.includes(mtype) ? Message : null;
-                } catch (e) {
-                    return null;
-                }
+                } catch (e) { return null; }
             },
             enumerable: true,
         },
         mediaType: {
-            get() {
-                try {
-                    const message = this.mediaMessage;
-                    if (!message) return null;
-                    return Object.keys(message)[0];
-                } catch (e) {
-                    return null;
-                }
-            },
+            get() { try { return this.mediaMessage ? Object.keys(this.mediaMessage)[0] : null; } catch (e) { return null; } },
             enumerable: true,
         },
-        _text: {
-            value: null,
-            writable: true,
-            enumerable: true,
-        },
+        _text: { value: null, writable: true, enumerable: true },
         text: {
             get() {
                 try {
+                    if (typeof this._text === "string" && this._text) return this._text;
                     const msg = this.msg;
                     const text = (typeof msg === "string" ? msg : msg?.text) || msg?.caption || msg?.contentText || "";
-                    return typeof this._text === "string" ? this._text : "" || (typeof text === "string" ? text : text?.selectedDisplayText || text?.hydratedTemplate?.hydratedContentText || text) || "";
-                } catch (e) {
-                    return "";
-                }
+                    return typeof text === "string" ? text : (text?.selectedDisplayText || text?.hydratedTemplate?.hydratedContentText || "");
+                } catch (e) { return ""; }
             },
-            set(str) {
-                this._text = str;
-            },
+            set(str) { this._text = str; },
             enumerable: true,
         },
         mentionedJid: {
             get() {
                 try {
-                    const mentioned = this.conn.parseMention(this.text).length > 0 ? this.conn.parseMention(this.text) : this.msg?.contextInfo?.mentionedJid || [];
-                    const groupChatId = this.chat?.endsWith("@g.us") ? this.chat : null;
-                    const processJid = (user) => {
-                        try {
-                            if (user && typeof user === "object") user = user.lid || user.jid || user.id || "";
-                            if (typeof user === "string" && user.includes("@lid") && groupChatId) {
-                                const resolved = String.prototype.resolveLidToRealJid.call(user, groupChatId, this.conn);
-                                return resolved.then(res => typeof res === "string" ? res : user);
-                            }
-                            return Promise.resolve(user);
-                        } catch (e) {
-                            return Promise.resolve(user);
-                        }
-                    };
-                    return Promise.all(mentioned.map(processJid)).then(jids => jids.filter(jid => jid && typeof jid === "string"));
-                } catch (e) {
-                    return Promise.resolve([]);
-                }
+                    // تم إصلاح التزامن هنا ليعود كمصفوفة مباشرة منعا للمشاكل بداخل الـ Getters
+                    const textMentions = this.conn ? this.conn.parseMention(this.text) : [];
+                    const contextMentions = this.msg?.contextInfo?.mentionedJid || [];
+                    return [...new Set([...textMentions, ...contextMentions])];
+                } catch (e) { return []; }
             },
             enumerable: true,
         },
         name: {
-            get() {
-                try {
-                    if (this.pushName) return this.pushName;
-                    const sender = this.sender;
-                    return sender ? this.conn?.getName?.(sender) : "";
-                } catch (e) {
-                    return "";
-                }
-            },
+            get() { try { return this.pushName || (this.sender ? this.conn?.getName?.(this.sender) : ""); } catch (e) { return ""; } },
             enumerable: true,
         },
         download: {
@@ -456,61 +1265,36 @@ export function serialize() {
                 try {
                     const mtype = this.mediaType;
                     return this.conn?.downloadM?.(this.mediaMessage?.[mtype], mtype?.replace(/message/i, ""), saveToFile);
-                } catch (e) {
-                    return Promise.reject(e);
-                }
+                } catch (e) { return Promise.reject(e); }
             },
             enumerable: true,
             configurable: true,
         },
         reply: {
             value(text, chatId, options) {
-                try {
-                    return this.conn?.reply?.(chatId ? chatId : this.chat, text, this, options);
-                } catch (e) {
-                    return Promise.reject(e);
-                }
+                try { return this.conn?.reply?.(chatId ? chatId : this.chat, text, this, options); } catch (e) { return Promise.reject(e); }
             },
             enumerable: true,
         },
         copy: {
-            value() {
-                try {
-                    const M = WAProto.WebMessageInfo;
-                    return smsg(this.conn, M.fromObject(M.toObject(this)));
-                } catch (e) {
-                    return null;
-                }
-            },
+            value() { try { return smsg(this.conn, proto.WebMessageInfo.fromObject(proto.WebMessageInfo.toObject(this))); } catch (e) { return null; } },
             enumerable: true,
         },
         forward: {
             value(jid, force = false, options = {}) {
-                try {
-                    return this.conn?.sendMessage?.(jid, { forward: this, force, ...options }, { ...options });
-                } catch (e) {
-                    return Promise.reject(e);
-                }
+                try { return this.conn?.sendMessage?.(jid, { forward: this, force, ...options }, { ...options }); } catch (e) { return Promise.reject(e); }
             },
             enumerable: true,
         },
         copyNForward: {
             value(jid, forceForward = false, options = {}) {
-                try {
-                    return this.conn?.copyNForward?.(jid, this, forceForward, options);
-                } catch (e) {
-                    return Promise.reject(e);
-                }
+                try { return this.conn?.copyNForward?.(jid, this, forceForward, options); } catch (e) { return Promise.reject(e); }
             },
             enumerable: true,
         },
         cMod: {
             value(jid, text = "", sender = this.sender, options = {}) {
-                try {
-                    return this.conn?.cMod?.(jid, this, text, sender, options);
-                } catch (e) {
-                    return Promise.reject(e);
-                }
+                try { return this.conn?.cMod?.(jid, this, text, sender, options); } catch (e) { return Promise.reject(e); }
             },
             enumerable: true,
         },
@@ -518,28 +1302,15 @@ export function serialize() {
             value() {
                 try {
                     if (!this.quoted?.id) return null;
-                    const q = WAProto.WebMessageInfo.fromObject(this.conn?.loadMessage?.(this.quoted.id) || this.quoted.vM || {});
+                    const q = proto.WebMessageInfo.fromObject(this.conn?.loadMessage?.(this.quoted.id) || this.quoted.vM || {});
                     return smsg(this.conn, q);
-                } catch (e) {
-                    return null;
-                }
+                } catch (e) { return null; }
             },
             enumerable: true,
         },
-        getQuotedMessage: {
-            get() {
-                return this.getQuotedObj;
-            },
-            enumerable: true,
-        },
+        getQuotedMessage: { get() { return this.getQuotedObj; }, enumerable: true },
         delete: {
-            value() {
-                try {
-                    return this.conn?.sendMessage?.(this.chat, { delete: this.key });
-                } catch (e) {
-                    return Promise.reject(e);
-                }
-            },
+            value() { try { return this.conn?.sendMessage?.(this.chat, { delete: this.key }); } catch (e) { return Promise.reject(e); } },
             enumerable: true,
         },
         quoted: {
@@ -567,66 +1338,34 @@ export function serialize() {
                                 },
                                 enumerable: true,
                             },
-                            mediaType: {
-                                get() {
-                                    const message = this.mediaMessage;
-                                    if (!message) return null;
-                                    return Object.keys(message)[0];
-                                },
-                                enumerable: true,
-                            },
+                            mediaType: { get() { return this.mediaMessage ? Object.keys(this.mediaMessage)[0] : null; }, enumerable: true },
                             id: { get() { return contextInfo.stanzaId || ""; }, enumerable: true },
                             chat: { get() { return contextInfo.remoteJid || self.chat || ""; }, enumerable: true },
                             isBaileys: {
                                 get() {
-                                    const userId = self.conn?.user?.id || "";
-                                    const sender = this.sender || "";
                                     const messageId = this.id || "";
                                     const baileysStarts = ['NJX-', 'Lyru-', 'META-', 'EvoGlobalBot-', 'FizzxyTheGreat-', 'BAE5', '3EB0', 'B24E', '8SCO', 'SUKI', 'MYSTIC-'];
-                                    return baileysStarts.some(prefix => messageId.startsWith(prefix)) || /^SUKI[A-F0-9]+$/.test(messageId) || /^MYSTIC[A-F0-9]+$/.test(messageId) || false;
+                                    return baileysStarts.some(prefix => messageId.startsWith(prefix)) || /^SUKI[A-F0-9]+$/.test(messageId) || /^MYSTIC[A-F0-9]+$/.test(messageId);
                                 },
                                 enumerable: true,
                             },
                             sender: {
                                 get() {
-                                    try {
-                                        const rawParticipant = contextInfo.participant;
-                                        if (!rawParticipant) {
-                                            const isFromMe = this.key?.fromMe || areJidsSameUser(this.chat, self.conn?.user?.id || "");
-                                            return isFromMe ? safeDecodeJid(self.conn?.user?.id, self.conn) : this.chat;
-                                        }
-                                        const parsedJid = safeDecodeJid(rawParticipant, self.conn);
-                                        if (parsedJid && parsedJid.includes("@lid")) {
-                                            const groupChatId = this.chat?.endsWith("@g.us") ? this.chat : null;
-                                            if (groupChatId) return String.prototype.resolveLidToRealJid.call(parsedJid, groupChatId, self.conn);
-                                        }
-                                        return parsedJid;
-                                    } catch (e) {
-                                        return "";
+                                    const rawParticipant = contextInfo.participant;
+                                    if (!rawParticipant) {
+                                        return (this.key?.fromMe || areJidsSameUser(this.chat, self.conn?.user?.id || "")) ? safeDecodeJid(self.conn?.user?.id, self.conn) : this.chat;
                                     }
+                                    return safeDecodeJid(rawParticipant, self.conn);
                                 },
                                 enumerable: true,
                             },
                             fromMe: { get() { return areJidsSameUser(this.sender || "", self.conn?.user?.jid || ""); }, enumerable: true },
                             text: { get() { return text || this.caption || this.contentText || this.selectedDisplayText || ""; }, enumerable: true },
-                            mentionedJid: {
-                                get() {
-                                    const mentioned = q?.contextInfo?.mentionedJid || self.getQuotedObj()?.mentionedJid || [];
-                                    const groupChatId = this.chat?.endsWith("@g.us") ? this.chat : null;
-                                    const processJid = (user) => {
-                                        if (user && typeof user === "object") user = user.lid || user.jid || user.id || "";
-                                        if (typeof user === "string" && user.includes("@lid") && groupChatId) {
-                                            return String.prototype.resolveLidToRealJid.call(user, groupChatId, self.conn).then(res => typeof res === "string" ? res : user);
-                                        }
-                                        return Promise.resolve(user);
-                                    };
-                                    return Promise.all(mentioned.map(processJid)).then(jids => jids.filter(jid => jid && typeof jid === "string")).catch(() => mentioned);
-                                },
-                                enumerable: true,
-                            },
+                            mentionedJid: { get() { return q?.contextInfo?.mentionedJid || []; }, enumerable: true },
+                            name: { get() { return this.sender ? self.conn?.getName?.(this.sender) : null; }, enumerable: true },
                             vM: {
                                 get() {
-                                    return WAProto.WebMessageInfo.fromObject({
+                                    return proto.WebMessageInfo.fromObject({
                                         key: { fromMe: this.fromMe, remoteJid: this.chat, id: this.id },
                                         message: quoted,
                                         ...(self.isGroup ? { participant: this.sender } : {}),
@@ -637,23 +1376,20 @@ export function serialize() {
                             fakeObj: { get() { return this.vM; }, enumerable: true },
                             download: {
                                 value(saveToFile = false) {
-                                    const mtype = this.mediaType;
-                                    return self.conn?.downloadM?.(this.mediaMessage?.[mtype], mtype?.replace(/message/i, ""), saveToFile);
+                                    return self.conn?.downloadM?.(this.mediaMessage?.[this.mediaType], this.mediaType?.replace(/message/i, ""), saveToFile);
                                 },
                                 enumerable: true,
                                 configurable: true,
                             },
                             reply: { value(text, chatId, options) { return self.conn?.reply?.(chatId ? chatId : this.chat, text, this.vM, options); }, enumerable: true },
-                            copy: { value() { const M = WAProto.WebMessageInfo; return smsg(self.conn, M.fromObject(M.toObject(this.vM))); }, enumerable: true },
+                            copy: { value() { return smsg(self.conn, proto.WebMessageInfo.fromObject(proto.WebMessageInfo.toObject(this.vM))); }, enumerable: true },
                             forward: { value(jid, force = false, options) { return self.conn?.sendMessage?.jid, { forward: this.vM, force, ...options }, { ...options }; }, enumerable: true },
                             copyNForward: { value(jid, forceForward = false, options) { return self.conn?.copyNForward?.(jid, this.vM, forceForward, options); }, enumerable: true },
                             cMod: { value(jid, text = "", sender = this.sender, options = {}) { return self.conn?.cMod?.(jid, this.vM, text, sender, options); }, enumerable: true },
                             delete: { value() { return self.conn?.sendMessage?.(this.chat, { delete: this.vM.key }); }, enumerable: true },
-                        },
+                        }
                     );
-                } catch (e) {
-                    return null;
-                }
+                } catch (e) { return null; }
             },
             enumerable: true,
         },
@@ -682,10 +1418,7 @@ export function protoType() {
     Uint8Array.prototype.getFileType = ArrayBuffer.prototype.getFileType = Buffer.prototype.getFileType = async function getFileType() {
         return await fileTypeFromBuffer(this);
     };
-    String.prototype.isNumber = Number.prototype.isNumber = function isNumber() {
-        const int = parseInt(this);
-        return typeof int === "number" && !isNaN(int);
-    };
+    String.prototype.isNumber = Number.prototype.isNumber = isNumber;
     String.prototype.capitalize = function capitalize() {
         return this.charAt(0).toUpperCase() + this.slice(1, this.length);
     };
@@ -693,6 +1426,7 @@ export function protoType() {
         return this.split(" ").map((v) => v.capitalize()).join(" ");
     };
 
+    // Resolver id@lid 
     String.prototype.resolveLidToRealJid = (function() {
         const lidCache = new Map();
         return async function(groupChatId, conn, maxRetries = 3, retryDelay = 60000) {
@@ -706,13 +1440,14 @@ export function protoType() {
             while (attempts < maxRetries) {
                 try {
                     const metadata = await conn?.groupMetadata(groupChatId);
-                    if (!metadata?.participants) throw new Error("No participants");
+                    if (!metadata?.participants) throw new Error("No participants found");
                     for (const participant of metadata.participants) {
                         try {
                             if (!participant?.jid) continue;
                             const contactDetails = await conn?.onWhatsApp(participant.jid);
                             if (!contactDetails?.[0]?.lid) continue;
-                            if (contactDetails[0].lid.split("@")[0] === lidToFind) {
+                            const possibleLid = contactDetails[0].lid.split("@")[0];
+                            if (possibleLid === lidToFind) {
                                 lidCache.set(inputJid, participant.jid);
                                 return participant.jid;
                             }
@@ -745,8 +1480,15 @@ export function protoType() {
         const days = Math.floor(this / (24 * 60 * 60 * 1000));
         return ((days ? `${days} day(s) ` : "") + (hours ? `${hours} hour(s) ` : "") + (minutes ? `${minutes} minute(s) ` : "") + (seconds ? `${seconds} second(s)` : "")).trim();
     };
-    Number.prototype.getRandom = String.prototype.getRandom = Array.prototype.getRandom = function getRandom() {
-        if (Array.isArray(this) || this instanceof String) return this[Math.floor(Math.random() * this.length)];
-        return Math.floor(Math.random() * this);
-    };
+    Number.prototype.getRandom = String.prototype.getRandom = Array.prototype.getRandom = getRandom;
+}
+
+function isNumber() {
+    const int = parseInt(this);
+    return typeof int === "number" && !isNaN(int);
+}
+
+function getRandom() {
+    if (Array.isArray(this) || this instanceof String) return this[Math.floor(Math.random() * this.length)];
+    return Math.floor(Math.random() * this);
 }
