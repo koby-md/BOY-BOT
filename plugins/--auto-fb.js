@@ -1,39 +1,45 @@
- import { fbdown } from 'btch-downloader';
+import { fbdown } from 'btch-downloader'
 
-const handler = async (m, { conn }) => {
-    const messageText = m.text.trim(); // استخدام m.text للحصول على محتوى الرسالة
+const facebookRegex =
+  /https?:\/\/(?:www\.)?(?:facebook\.com|fb\.watch|fb\.com)\/\S+/i
 
-    // التأكد من أن الرابط موجود
-    if (!messageText) {
-        return conn.reply(m.chat, 'يرجى إرسال رابط Facebook لتحميله.', m);
+export async function before(m, { conn }) {
+  if (!m.text) return
+
+  const match = m.text.match(facebookRegex)
+  if (!match) return
+
+  const url = match[0]
+
+  try {
+    await m.react('⏳')
+
+    const res = await fbdown(url)
+
+    const { HD, Normal_video } = res
+
+    if (HD) {
+      await conn.sendMessage(
+        m.chat,
+        {
+          video: { url: HD },
+          caption: '🌟 *فيديو Facebook HD تم تحميله تلقائياً*'
+        },
+        { quoted: m }
+      )
+    } else if (Normal_video) {
+      await conn.sendMessage(
+        m.chat,
+        {
+          video: { url: Normal_video },
+          caption: '🎥 *فيديو Facebook تم تحميله تلقائياً*'
+        },
+        { quoted: m }
+      )
     }
-m.reply(wait);
 
-    // استدعاء API لتحميل الفيديو من Facebook
-    try {
-        let res = await fbdown(messageText);
-        const { Normal_video, HD, creator } = res;
-
-        // إرسال الفيديو
-        if (HD) {
-            await conn.sendMessage(m.chat, {
-                video: { url: HD },
-                caption: `🌟 *فيديو HD من Facebook تم تحميله!*`
-            });
-        } else if (Normal_video) {
-            await conn.sendMessage(m.chat, {
-                video: { url: Normal_video },
-                caption: `🎥 *فيديو Facebook تم تحميله!*`
-            });
-        }
-    } catch (error) {
-        console.error(error);
-        conn.reply(m.chat, 'حدث خطأ أثناء معالجة الرابط.', m);
-    }
-};
-
-// استخدام RegExp في customPrefix للتحقق من روابط Facebook تلقائيًا
-handler.customPrefix = /https:\/\/(www\.)?(facebook\.com|fb\.com)\/.+/;  // تحقق من رابط Facebook
-handler.command = new RegExp(); // بدون أمر محدد
-
-export default handler;
+    await m.react('✅')
+  } catch (e) {
+    console.error(e)
+  }
+}
